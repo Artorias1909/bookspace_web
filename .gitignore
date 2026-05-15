@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.env
+*.env
+
+# Node
+node_modules/
+build/
+
+# Docker
+*.log
+
+# VS Code
+.vscode/
+
+# Python venv
+.venv/
+
+# Coverage
+htmlcov/
+.coverage
+
+# pytest cache
+.pytest_cache/
