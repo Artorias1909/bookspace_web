@@ -43,6 +43,15 @@ async def db_session(db_engine):
         yield session
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Clear the in-memory rate-limit buckets before every test."""
+    import app.rate_limit as _rl
+    _rl._buckets.clear()
+    yield
+    _rl._buckets.clear()
+
+
 @pytest_asyncio.fixture
 async def client(db_session):
     async def _override():

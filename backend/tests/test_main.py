@@ -7,7 +7,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.main import app, log_requests, unhandled_exception_handler
+from app.main import app, log_requests, unhandled_exception_handler, security_headers
 from app.logging_config import configure_logging
 
 
@@ -86,6 +86,35 @@ async def test_middleware_catches_call_next_exception():
     import json
     body = json.loads(response.body)
     assert "unexpected" in body["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_security_headers_present(client):
+    """Every response should carry the four security headers."""
+    resp = await client.get("/docs")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert resp.headers.get("x-xss-protection") == "1; mode=block"
+    assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+
+@pytest.mark.asyncio
+async def test_security_headers_middleware_directly():
+    """Unit-test the middleware function in isolation."""
+    request = _make_request()
+    mock_response = MagicMock()
+    mock_response.headers = {}
+
+    async def fake_next(req):
+        return mock_response
+
+    result = await security_headers(request, fake_next)
+    assert result.headers["X-Content-Type-Options"] == "nosniff"
+    assert result.headers["X-Frame-Options"] == "DENY"
 
 
 # ---------------------------------------------------------------------------

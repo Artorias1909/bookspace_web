@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas, auth
 from ..deps import get_db_session
+from ..rate_limit import login_rate_limit
 
 log = logging.getLogger("bookspace.auth")
 router = APIRouter()
@@ -28,7 +29,7 @@ async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_d
     return user
 
 
-@router.post("/token", response_model=schemas.Token)
+@router.post("/token", response_model=schemas.Token, dependencies=[Depends(login_rate_limit)])
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db_session),

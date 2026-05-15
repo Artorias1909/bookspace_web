@@ -19,8 +19,18 @@ def test_user_create_too_short_password():
 
 
 def test_user_create_valid():
-    u = schemas.UserCreate(username="validuser", password="validpass")
+    u = schemas.UserCreate(username="validuser", password="validpass1")
     assert u.username == "validuser"
+
+
+def test_user_create_password_no_digit():
+    with pytest.raises(ValidationError, match="digit"):
+        schemas.UserCreate(username="validuser", password="onlyletters")
+
+
+def test_user_create_password_no_letter():
+    with pytest.raises(ValidationError, match="letter"):
+        schemas.UserCreate(username="validuser", password="12345678")
 
 
 def test_authors_validator_string_input():

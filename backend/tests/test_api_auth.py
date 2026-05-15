@@ -3,6 +3,7 @@ from unittest.mock import patch, AsyncMock
 from sqlalchemy.exc import SQLAlchemyError
 
 from tests.conftest import create_user_and_login
+import app.rate_limit as _rl
 
 
 @pytest.mark.asyncio
@@ -67,3 +68,23 @@ async def test_me(client):
     resp = await client.get("/auth/me", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["username"] == "meuser"
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit(client):
+    """Exceeding LOGIN_MAX_HITS attempts in the window returns 429."""
+    _rl._buckets.clear()
+    for _ in range(_rl.LOGIN_MAX_HITS):
+        await client.post(
+            "/auth/token",
+            data={"username": "nobody", "password": "x"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    resp = await client.post(
+        "/auth/token",
+        data={"username": "nobody", "password": "x"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 429
+    assert "Retry-After" in resp.headers
+    _rl._buckets.clear()  # cleanup so other tests are unaffected
