@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -10,16 +9,15 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, schemas
+from .config import settings
 from .database import get_db
 
 log = logging.getLogger("bookspace.auth")
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:  # pragma: no cover
-    raise ValueError("SECRET_KEY environment variable is required")
-
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+# Module-level aliases so tests can access these without importing config directly
+SECRET_KEY = settings.secret_key
+ALGORITHM  = settings.algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -39,10 +37,16 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    token = _jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    log.debug("Access token created for subject '%s', expires in %s min", data.get("sub"), ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
+    )
+    to_encode["exp"] = expire
+    token = _jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    log.debug(
+        "Access token created for '%s', expires in %s min",
+        data.get("sub"),
+        settings.access_token_expire_minutes,
+    )
     return token
 
 
@@ -56,7 +60,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         username: str = payload.get("sub")
         if username is None:
             log.warning("JWT token missing 'sub' claim")

@@ -1,5 +1,4 @@
 import logging
-import os
 import traceback
 from contextlib import asynccontextmanager
 
@@ -7,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .config import settings
 from .logging_config import configure_logging
 from .database import engine, Base
 from .routers import (
@@ -24,7 +24,7 @@ log = logging.getLogger("bookspace.api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Starting Bookspace API — running database migrations")
+    log.info("Starting Bookspace API — initialising database schema")
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -40,7 +40,7 @@ app = FastAPI(title="Bookspace Library API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,9 +88,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
-app.include_router(items_router.router, prefix="/items", tags=["items"])
-app.include_router(manga_router.router, prefix="/items", tags=["manga"])
-app.include_router(series_router.router, prefix="/series", tags=["series"])
+app.include_router(auth_router.router,       prefix="/auth",       tags=["auth"])
+app.include_router(items_router.router,      prefix="/items",      tags=["items"])
+app.include_router(manga_router.router,      prefix="/items",      tags=["manga"])
+app.include_router(series_router.router,     prefix="/series",     tags=["series"])
 app.include_router(user_items_router.router, prefix="/user-items", tags=["user-items"])
-app.include_router(import_router.router, prefix="/import", tags=["import"])
+app.include_router(import_router.router,     prefix="/import",     tags=["import"])

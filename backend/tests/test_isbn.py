@@ -74,7 +74,7 @@ async def test_google_success():
 @pytest.mark.asyncio
 @respx.mock
 async def test_google_success_with_api_key():
-    with patch("app.crud.GOOGLE_BOOKS_API_KEY", "my-test-key"):
+    with patch("app.crud.isbn.GOOGLE_BOOKS_API_KEY", "my-test-key"):
         respx.get(GBOOKS).respond(200, json=GOOGLE_HIT)
         result, source = await crud.parse_isbn_metadata(VALID_ISBN)
     assert source == "google"
@@ -119,7 +119,7 @@ async def test_google_rate_limited_no_key_both_fail():
 @pytest.mark.asyncio
 @respx.mock
 async def test_google_rate_limited_with_key_both_fail():
-    with patch("app.crud.GOOGLE_BOOKS_API_KEY", "some-key"):
+    with patch("app.crud.isbn.GOOGLE_BOOKS_API_KEY", "some-key"):
         respx.get(GBOOKS).respond(429)
         respx.get(OL).respond(200, json={})
         with pytest.raises(ValueError, match="API key quota"):
@@ -264,7 +264,7 @@ async def test_ol_non200_both_fail():
 
 @pytest.mark.asyncio
 async def test_unexpected_exception():
-    with patch("app.crud.httpx.AsyncClient") as mock_cls:
+    with patch("app.crud.isbn.httpx.AsyncClient") as mock_cls:
         mock_cls.return_value.__aenter__ = AsyncMock(side_effect=RuntimeError("boom"))
         mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         with pytest.raises(ValueError, match="Unexpected error"):

@@ -1,18 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { fetchUserLibrary } from "../api";
+import React, { useState } from "react";
+import { useLibrary } from "../hooks/useLibrary";
+import { STATUS_TABS } from "../constants";
 import ItemCardGrid from "./ItemCardGrid";
 import ItemTable from "./ItemTable";
 import ItemDetailModal from "./ItemDetailModal";
 import AddBookPanel from "./AddBookPanel";
-
-const STATUS_TABS = [
-  { key: "all",       label: "All" },
-  { key: "reading",   label: "Reading" },
-  { key: "unread",    label: "Unread" },
-  { key: "completed", label: "Completed" },
-  { key: "owned",     label: "Owned" },
-  { key: "wishlist",  label: "Wishlist" },
-];
 
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -37,49 +29,18 @@ const ListIcon = () => (
 );
 
 const LibraryDashboard = () => {
-  const [viewMode, setViewMode] = useState("grid");
-  const [search, setSearch] = useState("");
-  const [activeStatus, setActiveStatus] = useState("all");
-  const [entries, setEntries] = useState([]);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
+  const {
+    viewMode, setViewMode,
+    search, setSearch,
+    activeStatus, setStatus,
+    entries, page, setPage, totalPages, total,
+    error, loading, refresh,
+  } = useLibrary();
+
   const [selectedEntry, setSelectedEntry] = useState(null);
-  const [showAddPanel, setShowAddPanel] = useState(false);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [refresh, setRefresh] = useState(false);
+  const [showAddPanel,  setShowAddPanel]  = useState(false);
 
-  const loadEntries = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const params = { page, page_size: 30, sort_by: "title", sort_dir: "asc" };
-      if (search) params.q = search;
-      if (activeStatus !== "all") params.status = activeStatus;
-      const response = await fetchUserLibrary(params);
-      setEntries(response.data.items);
-      setTotalPages(response.data.pages);
-      setTotal(response.data.total);
-    } catch (err) {
-      setError(err.response?.data?.detail || "Unable to load library");
-    } finally {
-      setLoading(false);
-    }
-  }, [search, page, activeStatus, refresh]);
-
-  useEffect(() => { loadEntries(); }, [loadEntries]);
-
-  const handleStatusTab = (key) => {
-    setActiveStatus(key);
-    setPage(1);
-  };
-
-  const handleSearch = (e) => {
-    setSearch(e.target.value);
-    setPage(1);
-  };
-
-  const triggerRefresh = () => setRefresh((p) => !p);
+  const isFiltered = search || activeStatus !== "all";
 
   return (
     <main className="dashboard">
@@ -90,15 +51,23 @@ const LibraryDashboard = () => {
           <input
             placeholder="Search title, author, genre…"
             value={search}
-            onChange={handleSearch}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="toolbar-spacer" />
         <div className="view-toggle">
-          <button className={`btn-icon ${viewMode === "grid" ? "active" : ""}`} onClick={() => setViewMode("grid")} title="Grid view">
+          <button
+            className={`btn-icon ${viewMode === "grid" ? "active" : ""}`}
+            onClick={() => setViewMode("grid")}
+            title="Grid view"
+          >
             <GridIcon />
           </button>
-          <button className={`btn-icon ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} title="List view">
+          <button
+            className={`btn-icon ${viewMode === "list" ? "active" : ""}`}
+            onClick={() => setViewMode("list")}
+            title="List view"
+          >
             <ListIcon />
           </button>
         </div>
@@ -107,14 +76,14 @@ const LibraryDashboard = () => {
         </button>
       </div>
 
-      {/* Status filter */}
+      {/* Status filter tabs */}
       <div className="status-tabs">
         {STATUS_TABS.map(({ key, label }) => (
           <button
             key={key}
             className={`status-tab ${activeStatus === key ? "active" : ""}`}
             data-status={key}
-            onClick={() => handleStatusTab(key)}
+            onClick={() => setStatus(key)}
           >
             {label}
           </button>
@@ -124,7 +93,9 @@ const LibraryDashboard = () => {
         )}
       </div>
 
-      {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>
+      )}
 
       {/* Book list */}
       {loading ? (
@@ -132,10 +103,16 @@ const LibraryDashboard = () => {
       ) : entries.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📚</div>
-          <h3>{search || activeStatus !== "all" ? "No books found" : "Your library is empty"}</h3>
-          <p>{search || activeStatus !== "all" ? "Try a different search or filter." : "Add your first book to get started."}</p>
-          {!search && activeStatus === "all" && (
-            <button className="btn btn-primary" onClick={() => setShowAddPanel(true)}>+ Add book</button>
+          <h3>{isFiltered ? "No books found" : "Your library is empty"}</h3>
+          <p>
+            {isFiltered
+              ? "Try a different search or filter."
+              : "Add your first book to get started."}
+          </p>
+          {!isFiltered && (
+            <button className="btn btn-primary" onClick={() => setShowAddPanel(true)}>
+              + Add book
+            </button>
           )}
         </div>
       ) : viewMode === "grid" ? (
@@ -147,18 +124,26 @@ const LibraryDashboard = () => {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="pagination">
-          <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Prev</button>
+          <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            ← Prev
+          </button>
           <span className="pagination-info">Page {page} of {totalPages}</span>
-          <button className="btn btn-ghost" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next →</button>
+          <button className="btn btn-ghost" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            Next →
+          </button>
         </div>
       )}
 
       {/* Modals */}
       {showAddPanel && (
-        <AddBookPanel onClose={() => setShowAddPanel(false)} onSaved={triggerRefresh} />
+        <AddBookPanel onClose={() => setShowAddPanel(false)} onSaved={refresh} />
       )}
       {selectedEntry && (
-        <ItemDetailModal entry={selectedEntry} onClose={() => setSelectedEntry(null)} onSaved={triggerRefresh} />
+        <ItemDetailModal
+          entry={selectedEntry}
+          onClose={() => setSelectedEntry(null)}
+          onSaved={refresh}
+        />
       )}
     </main>
   );
