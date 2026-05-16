@@ -66,6 +66,7 @@ async def test_isbn_wrong_length():
 @respx.mock
 async def test_google_success():
     respx.get(GBOOKS).respond(200, json=GOOGLE_HIT)
+    respx.get(OL).respond(200, json={})
     result, source = await crud.parse_isbn_metadata(VALID_ISBN)
     assert source == "google"
     assert result["title"] == "Harry Potter"
@@ -76,8 +77,50 @@ async def test_google_success():
 async def test_google_success_with_api_key():
     with patch("app.crud.isbn.GOOGLE_BOOKS_API_KEY", "my-test-key"):
         respx.get(GBOOKS).respond(200, json=GOOGLE_HIT)
+        respx.get(OL).respond(200, json={})
         result, source = await crud.parse_isbn_metadata(VALID_ISBN)
     assert source == "google"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_google_and_ol_merged():
+    ol_with_series = {
+        f"ISBN:{VALID_ISBN}": {
+            "title": "Harry Potter",
+            "authors": [{"name": "J.K. Rowling"}],
+            "publish_date": "1997",
+            "subjects": [{"name": "series:Harry Potter"}, {"name": "form:graphic novel"}],
+            "subtitle": "The Philosopher's Stone",
+        }
+    }
+    respx.get(GBOOKS).respond(200, json=GOOGLE_HIT)
+    respx.get(OL).respond(200, json=ol_with_series)
+    result, source = await crud.parse_isbn_metadata(VALID_ISBN)
+    assert source == "google+openlibrary"
+    assert result["series_name"] == "Harry Potter"
+    assert result["volume_title"] == "The Philosopher's Stone"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ol_cover_used_when_google_has_none():
+    """OL cover fills in when Google returns no imageLinks."""
+    google_no_cover = {
+        "totalItems": 1,
+        "items": [{"volumeInfo": {"title": "Harry Potter", "publishedDate": "1997"}}],
+    }
+    ol_with_cover = {
+        f"ISBN:{VALID_ISBN}": {
+            "title": "Harry Potter",
+            "cover": {"large": "http://covers.ol.org/L.jpg"},
+        }
+    }
+    respx.get(GBOOKS).respond(200, json=google_no_cover)
+    respx.get(OL).respond(200, json=ol_with_cover)
+    result, source = await crud.parse_isbn_metadata(VALID_ISBN)
+    assert source == "google+openlibrary"
+    assert result["cover_url"] == "http://covers.ol.org/L.jpg"
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +322,7 @@ async def test_unexpected_exception():
 @respx.mock
 async def test_isbn_with_dashes():
     respx.get(GBOOKS).respond(200, json=GOOGLE_HIT)
+    respx.get(OL).respond(200, json={})
     result, source = await crud.parse_isbn_metadata("978-0-747-53274-3")
     assert source == "google"
 

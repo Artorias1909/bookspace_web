@@ -73,6 +73,7 @@ async def update_series(
         series.name = series_in.name
         series.type = series_in.type
         series.total_volumes = series_in.total_volumes
+        series.cover_url = series_in.cover_url
         db.add(series)
         await db.commit()
         await db.refresh(series)
@@ -81,6 +82,29 @@ async def update_series(
         log.error("Database error updating series id=%s", series_id, exc_info=True)
         raise HTTPException(status_code=500, detail="Could not save changes. Please try again.")
     return series
+
+
+@router.patch("/{series_id}/status", response_model=schemas.BulkUpdateResult)
+async def bulk_set_series_status(
+    series_id: int,
+    update_in: schemas.SeriesStatusUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: schemas.UserRead = Depends(get_current_user),
+):
+    """Set all of the current user's library entries for a series to the given status."""
+    try:
+        series = await crud.get_series(db, series_id)
+    except SQLAlchemyError:
+        log.error("Database error fetching series id=%s for bulk status", series_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not load series. Please try again.")
+    if not series:
+        raise HTTPException(status_code=404, detail=f"Series {series_id} not found.")
+    try:
+        count = await crud.bulk_update_series_status(db, current_user.id, series_id, update_in.status)
+    except SQLAlchemyError:
+        log.error("Database error bulk-updating status for series id=%s", series_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not update status. Please try again.")
+    return schemas.BulkUpdateResult(updated=count)
 
 
 @router.post("/{series_id}/assign/{item_id}", response_model=schemas.ItemRead)
@@ -126,3 +150,27 @@ async def series_items(
     except SQLAlchemyError:
         log.error("Database error listing items for series id=%s", series_id, exc_info=True)
         raise HTTPException(status_code=500, detail="Could not load series items. Please try again.")
+
+
+@router.delete("/{series_id}/library", response_model=schemas.BulkUpdateResult)
+async def delete_series_from_library(
+    series_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: schemas.UserRead = Depends(get_current_user),
+):
+    """Remove all of the current user's library entries for a series."""
+    try:
+        series = await crud.get_series(db, series_id)
+    except SQLAlchemyError:
+        log.error("Database error fetching series id=%s for delete", series_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not load series. Please try again.")
+    if not series:
+        raise HTTPException(status_code=404, detail=f"Series {series_id} not found.")
+    try:
+        count = await crud.delete_user_series_entries(db, current_user.id, series_id)
+    except SQLAlchemyError:
+        log.error("Database error deleting library entries for series id=%s", series_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not delete series entries. Please try again.")
+    log.info("Series id=%s removed from library of user_id=%s (%s entries)", series_id, current_user.id, count)
+    return schemas.BulkUpdateResult(updated=count)
+

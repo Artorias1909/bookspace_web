@@ -1,6 +1,6 @@
 from datetime import datetime
 from math import ceil
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, List, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -48,6 +48,7 @@ class SeriesBase(BaseModel):
     name: str
     type: str = Field(..., pattern="^(book|manga|comic)$")
     total_volumes: Optional[int] = None
+    cover_url: Optional[str] = None
 
 
 class SeriesCreate(SeriesBase):
@@ -58,6 +59,27 @@ class SeriesRead(SeriesBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class SeriesStatusUpdate(BaseModel):
+    status: str = Field(..., pattern="^(unread|reading|completed|owned|wishlist)$")
+
+
+class BulkUpdateResult(BaseModel):
+    updated: int
+
+
+class BoxSetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    series_id: Optional[int] = None
+    name: Optional[str] = None
+    isbn: Optional[str] = None
+    volume_from: int
+    volume_to: int
+    cover_url: Optional[str] = None
+    publication_year: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +155,7 @@ class ItemBase(BaseModel):
     series_id: Optional[int] = None
     volume_number: Optional[str] = None
     volume_title: Optional[str] = None
+    box_set_id: Optional[int] = None
 
     @field_validator("authors", mode="before")
     @classmethod
@@ -156,6 +179,7 @@ class ItemRead(ItemBase):
     id: int
     series: Optional[SeriesRead] = None
     manga_meta: Optional[MangaVolumeRead] = None
+    box_set: Optional[BoxSetRead] = None
 
 
 # ---------------------------------------------------------------------------
@@ -217,5 +241,20 @@ class ISBNImportRequest(BaseModel):
 
 
 class ISBNImportResponse(ItemRead):
+    type: Literal["item"] = "item"
     source: str
     raw_metadata: Optional[dict] = None
+    already_in_library: bool = False
+
+
+class BoxSetImportResponse(BaseModel):
+    """Returned when the scanned ISBN is a collector box (Sammelschuber/Sammelbox)."""
+    type: Literal["boxset"] = "boxset"
+    source: str
+    title: str                        # arc name or boxset title for display
+    cover_url: Optional[str] = None
+    authors: List[str] = Field(default_factory=list)
+    box_set: BoxSetRead
+    box_volumes: List[ItemRead]       # individual volumes in the box
+    volume_count: int
+    already_in_library_ids: List[int] = Field(default_factory=list)  # item_ids already in library

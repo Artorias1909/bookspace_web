@@ -21,7 +21,7 @@ export function useLibrary() {
     setLoading(true);
     setError(null);
     try {
-      const params = { page, page_size: 30, sort_by: "title", sort_dir: "asc" };
+      const params = { page, page_size: 100, sort_by: "title", sort_dir: "asc" };
       if (search) params.q = search;
       if (activeStatus !== "all") params.status = activeStatus;
       const res = await fetchUserLibrary(params);
@@ -33,7 +33,7 @@ export function useLibrary() {
     } finally {
       setLoading(false);
     }
-  }, [search, page, activeStatus, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, page, activeStatus, refreshTick]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
 

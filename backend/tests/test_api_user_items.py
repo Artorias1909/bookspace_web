@@ -127,6 +127,41 @@ async def test_update_user_item_save_db_error(client):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_item(client):
+    h = await create_user_and_login(client)
+    entry = await _create_entry(client, h)
+    resp = await client.delete(f"/user-items/{entry['id']}", headers=h)
+    assert resp.status_code == 204
+    # Confirm it's gone
+    get_resp = await client.get(f"/user-items/{entry['id']}", headers=h)
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_user_item_not_found(client):
+    h = await create_user_and_login(client)
+    resp = await client.delete("/user-items/9999", headers=h)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_user_item_fetch_db_error(client):
+    h = await create_user_and_login(client)
+    with patch("app.routers.user_items.crud.get_user_item", side_effect=SQLAlchemyError("db")):
+        resp = await client.delete("/user-items/1", headers=h)
+    assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_delete_user_item_delete_db_error(client):
+    h = await create_user_and_login(client)
+    entry = await _create_entry(client, h)
+    with patch("app.routers.user_items.crud.delete_user_item", side_effect=SQLAlchemyError("db")):
+        resp = await client.delete(f"/user-items/{entry['id']}", headers=h)
+    assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
 async def test_list_user_items_status_filter(client):
     h = await create_user_and_login(client)
     await _create_entry(client, h)  # status=unread
@@ -140,3 +175,15 @@ async def test_list_user_items_status_filter(client):
     data = resp.json()
     assert data["total"] == 1
     assert all(item["status"] == "reading" for item in data["items"])
+
+
+@pytest.mark.asyncio
+async def test_create_user_item_duplicate_returns_409(client):
+    """Adding the same item_id twice returns 409 Conflict."""
+    h = await create_user_and_login(client)
+    entry = await _create_entry(client, h)
+    item_id = entry["item"]["id"]
+
+    resp2 = await client.post("/user-items/", json={"item_id": item_id, "status": "reading"}, headers=h)
+    assert resp2.status_code == 409
+    assert "Bibliothek" in resp2.json()["detail"]

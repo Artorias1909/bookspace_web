@@ -1,6 +1,99 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { importISBN, createUserEntry } from "../api";
 import { STATUS_OPTIONS, capitalize } from "../constants";
+
+const SCAN_STEPS = [
+  { id: "dnb",         label: "Deutsche Nationalbibliothek" },
+  { id: "google",      label: "Google Books / Open Library" },
+  { id: "anilist",     label: "AniList (Manga-Covers)" },
+  { id: "mangapassion",label: "Manga-Passion (Verlagsdaten)" },
+];
+
+const ScanProgress = ({ activeStep, done, source }) => (
+  <div style={{
+    margin: "12px 0", padding: "10px 14px", borderRadius: 8,
+    background: "var(--surface-2)", border: "1px solid var(--border)",
+  }}>
+    <div style={{ fontSize: "0.78rem", color: "var(--text-3)", marginBottom: 8, fontWeight: 600, letterSpacing: "0.04em" }}>
+      WIRD AUSGELESEN…
+    </div>
+    {SCAN_STEPS.map((step, idx) => {
+      const isActive = idx === activeStep && !done;
+      const isDone = done || idx < activeStep;
+      return (
+        <div key={step.id} style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "3px 0", fontSize: "0.85rem",
+          color: isDone ? "var(--text-1)" : isActive ? "var(--accent)" : "var(--text-3)",
+        }}>
+          <span style={{ width: 16, textAlign: "center", flexShrink: 0 }}>
+            {isDone ? "✓" : isActive ? "⟳" : "·"}
+          </span>
+          <span>{step.label}</span>
+          {isActive && (
+            <span style={{ color: "var(--text-3)", fontSize: "0.78rem" }}>lädt…</span>
+          )}
+          {done && idx === SCAN_STEPS.length - 1 && source && (
+            <span style={{ color: "var(--text-3)", fontSize: "0.78rem", marginLeft: "auto" }}>
+              via {source}
+            </span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+);
+
+const BoxSetPreview = ({ preview }) => {
+  const box = preview.box_set;
+  const alreadyIds = new Set(preview.already_in_library_ids || []);
+  const newCount = preview.box_volumes.filter((v) => !alreadyIds.has(v.id)).length;
+  return (
+    <div className="isbn-preview" style={{ flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 12 }}>
+        {preview.cover_url
+          ? <img src={preview.cover_url} alt={preview.title} style={{ width: 70, height: 100, objectFit: "cover", borderRadius: 6 }} />
+          : (
+            <div style={{
+              width: 70, height: 100, background: "var(--bg-card)",
+              borderRadius: 6, display: "flex", alignItems: "center",
+              justifyContent: "center", color: "var(--text-3)",
+            }}>
+              📦
+            </div>
+          )
+        }
+        <div className="isbn-preview-info">
+          <h4>{preview.title}</h4>
+          {preview.authors?.length > 0 && <p>{preview.authors.join(", ")}</p>}
+          <p style={{ color: "var(--accent)" }}>
+            Sammelbox · Bände {box.volume_from}–{box.volume_to}
+          </p>
+          <p style={{ color: "var(--text-2)", fontSize: "0.85em" }}>
+            {newCount > 0
+              ? `${newCount} neue Bände werden hinzugefügt`
+              : "Alle Bände bereits in deiner Bibliothek"}
+          </p>
+        </div>
+      </div>
+      {preview.box_volumes?.length > 0 && (
+        <div style={{ fontSize: "0.82em", lineHeight: 1.8, display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
+          {preview.box_volumes.map((v) => {
+            const owned = alreadyIds.has(v.id);
+            return (
+              <span key={v.id} style={{
+                color: owned ? "var(--text-3)" : "var(--text-1)",
+                textDecoration: owned ? "line-through" : "none",
+              }}>
+                Band {v.volume_number}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const EMPTY_MANUAL = {
   title: "", authors: "", publication_year: "", genre: "",
@@ -16,6 +109,9 @@ const AddBookPanel = ({ onClose, onSaved }) => {
   const [isbnLoading, setIsbnLoading] = useState(false);
   const [isbnError,   setIsbnError]   = useState(null);
   const [isbnStatus,  setIsbnStatus]  = useState("unread");
+  const [scanStep,    setScanStep]    = useState(-1);   // -1 = idle
+  const [scanDone,    setScanDone]    = useState(false);
+  const stepTimers = useRef([]);
 
   // Manual tab state
   const [manual,        setManual]        = useState(EMPTY_MANUAL);
@@ -28,13 +124,29 @@ const AddBookPanel = ({ onClose, onSaved }) => {
   // ── ISBN flow ────────────────────────────────────────────────────────────
   const handleIsbnFetch = async (e) => {
     e.preventDefault();
+    // Clear previous state
+    stepTimers.current.forEach(clearTimeout);
+    stepTimers.current = [];
     setIsbnLoading(true); setIsbnError(null); setPreview(null);
+    setScanStep(0); setScanDone(false);
+
+    // Animate through steps while request is in-flight (rough timing match)
+    const delays = [0, 900, 1800, 2700];
+    delays.forEach((delay, idx) => {
+      stepTimers.current.push(setTimeout(() => setScanStep(idx), delay));
+    });
+
     try {
       const res = await importISBN(isbnInput.trim());
+      setScanDone(true);
+      setScanStep(SCAN_STEPS.length - 1);
       setPreview(res.data);
     } catch (err) {
+      setScanStep(-1);
       setIsbnError(err.response?.data?.detail || "Could not find this ISBN");
     } finally {
+      stepTimers.current.forEach(clearTimeout);
+      stepTimers.current = [];
       setIsbnLoading(false);
     }
   };
@@ -43,7 +155,16 @@ const AddBookPanel = ({ onClose, onSaved }) => {
     if (!preview) return;
     setSaving(true);
     try {
-      await createUserEntry({ item_id: preview.id, status: isbnStatus, current_page: 0 });
+      if (preview.type === "boxset") {
+        const alreadyIds = new Set(preview.already_in_library_ids || []);
+        for (const vol of preview.box_volumes) {
+          if (!alreadyIds.has(vol.id)) {
+            await createUserEntry({ item_id: vol.id, status: isbnStatus, current_page: 0 });
+          }
+        }
+      } else {
+        await createUserEntry({ item_id: preview.id, status: isbnStatus, current_page: 0 });
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -126,41 +247,63 @@ const AddBookPanel = ({ onClose, onSaved }) => {
                 </div>
               </form>
 
+              {isbnLoading && scanStep >= 0 && (
+                <ScanProgress activeStep={scanStep} done={false} source={null} />
+              )}
+
               {isbnError && <div className="alert alert-error">{isbnError}</div>}
+
+              {preview && !isbnLoading && scanDone && scanStep >= 0 && (
+                <ScanProgress activeStep={SCAN_STEPS.length - 1} done source={preview.source} />
+              )}
 
               {preview && (
                 <>
-                  <div className="isbn-preview">
-                    {preview.cover_url
-                      ? <img src={preview.cover_url} alt={preview.title} />
-                      : (
-                        <div style={{
-                          width: 70, height: 100, background: "var(--bg-card)",
-                          borderRadius: 6, display: "flex", alignItems: "center",
-                          justifyContent: "center", color: "var(--text-3)",
-                        }}>
-                          📖
-                        </div>
-                      )
-                    }
-                    <div className="isbn-preview-info">
-                      <h4>{preview.title}</h4>
-                      <p>{preview.authors?.join(", ")}</p>
-                      <p>
-                        {preview.publication_year || ""}
-                        {preview.genre ? ` · ${preview.genre}` : ""}
-                      </p>
-                      {preview.page_count && <p>{preview.page_count} pages</p>}
+                  {preview.type === "boxset" ? (
+                    <BoxSetPreview preview={preview} />
+                  ) : (
+                    <div className="isbn-preview">
+                      {preview.cover_url
+                        ? <img src={preview.cover_url} alt={preview.title} />
+                        : (
+                          <div style={{
+                            width: 70, height: 100, background: "var(--bg-card)",
+                            borderRadius: 6, display: "flex", alignItems: "center",
+                            justifyContent: "center", color: "var(--text-3)",
+                          }}>
+                            📖
+                          </div>
+                        )
+                      }
+                      <div className="isbn-preview-info">
+                        <h4>{preview.title}</h4>
+                        <p>{preview.authors?.join(", ")}</p>
+                        <p>
+                          {preview.publication_year || ""}
+                          {preview.genre ? ` · ${preview.genre}` : ""}
+                        </p>
+                        {preview.page_count && <p>{preview.page_count} pages</p>}
+                        {preview.already_in_library && (
+                          <p style={{
+                            color: "var(--accent)", fontWeight: 600,
+                            fontSize: "0.82em", marginTop: 4,
+                          }}>
+                            ✓ Bereits in deiner Bibliothek
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="field" style={{ marginTop: 16 }}>
-                    <label>Add to library as</label>
-                    <select value={isbnStatus} onChange={(e) => setIsbnStatus(e.target.value)}>
-                      {STATUS_OPTIONS.map((s) => (
-                        <option key={s} value={s}>{capitalize(s)}</option>
-                      ))}
-                    </select>
-                  </div>
+                  )}
+                  {!preview.already_in_library && !(preview.type === "boxset" && preview.volume_count > 0 && (preview.already_in_library_ids?.length ?? 0) >= preview.volume_count) && (
+                    <div className="field" style={{ marginTop: 16 }}>
+                      <label>Hinzufügen als</label>
+                      <select value={isbnStatus} onChange={(e) => setIsbnStatus(e.target.value)}>
+                        {STATUS_OPTIONS.map((s) => (
+                          <option key={s} value={s}>{capitalize(s)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
             </>
@@ -242,11 +385,19 @@ const AddBookPanel = ({ onClose, onSaved }) => {
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          {tab === "isbn" && preview && (
-            <button className="btn btn-primary" onClick={handleIsbnSave} disabled={saving}>
-              {saving ? "Adding…" : "Add to library"}
-            </button>
-          )}
+          {tab === "isbn" && preview && (() => {
+            const allOwned = preview.already_in_library ||
+              (preview.type === "boxset" && preview.volume_count > 0 && (preview.already_in_library_ids?.length ?? 0) >= preview.volume_count);
+            return allOwned ? (
+              <span style={{ color: "var(--text-3)", fontSize: "0.9em", alignSelf: "center" }}>
+                Bereits in der Bibliothek
+              </span>
+            ) : (
+              <button className="btn btn-primary" onClick={handleIsbnSave} disabled={saving}>
+                {saving ? "Wird hinzugefügt…" : "Zur Bibliothek hinzufügen"}
+              </button>
+            );
+          })()}
           {tab === "manual" && (
             <button className="btn btn-primary" type="submit" form="manual-form" disabled={manualLoading}>
               {manualLoading ? "Adding…" : "Add to library"}

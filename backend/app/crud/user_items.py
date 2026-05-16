@@ -9,11 +9,15 @@ from .. import models, schemas
 
 log = logging.getLogger("bookspace.crud")
 
-# Eager-load options for UserItemData → Item → MangaVolume → ChapterEntry
+# Eager-load options for UserItemData → Item (with manga_meta+chapters, series, box_set)
 _ENTRY_LOAD = (
     selectinload(models.UserItemData.item)
     .selectinload(models.Item.manga_meta)
-    .selectinload(models.MangaVolume.chapters)
+    .selectinload(models.MangaVolume.chapters),
+    selectinload(models.UserItemData.item)
+    .selectinload(models.Item.series),
+    selectinload(models.UserItemData.item)
+    .selectinload(models.Item.box_set),
 )
 
 
@@ -44,6 +48,11 @@ async def create_user_item_data(
         log.error("create_user_item_data: neither item_id nor item provided")
         raise ValueError("Item data is required")
 
+    existing = await get_user_item_by_item_id(db, user_id, item.id)
+    if existing:
+        log.debug("create_user_item_data: item_id=%s already in library for user_id=%s", item.id, user_id)
+        raise ValueError("already_in_library")
+
     current_page = user_item_data_in.current_page or 0
     progress_percent = calculate_progress(current_page, item.page_count)
     entry = models.UserItemData(
@@ -57,7 +66,7 @@ async def create_user_item_data(
     await db.commit()
 
     result = await db.execute(
-        select(models.UserItemData).options(_ENTRY_LOAD).where(models.UserItemData.id == entry.id)
+        select(models.UserItemData).options(*_ENTRY_LOAD).where(models.UserItemData.id == entry.id)
     )
     entry = result.scalars().first()
     log.info(
@@ -67,12 +76,26 @@ async def create_user_item_data(
     return entry
 
 
+async def get_user_item_by_item_id(
+    db: AsyncSession, user_id: int, item_id: int
+) -> Optional[models.UserItemData]:
+    result = await db.execute(
+        select(models.UserItemData)
+        .options(*_ENTRY_LOAD)
+        .where(
+            models.UserItemData.user_id == user_id,
+            models.UserItemData.item_id == item_id,
+        )
+    )
+    return result.scalars().first()
+
+
 async def get_user_item(
     db: AsyncSession, entry_id: int, user_id: int
 ) -> Optional[models.UserItemData]:
     result = await db.execute(
         select(models.UserItemData)
-        .options(_ENTRY_LOAD)
+        .options(*_ENTRY_LOAD)
         .where(
             models.UserItemData.id == entry_id,
             models.UserItemData.user_id == user_id,
@@ -93,7 +116,13 @@ def _user_items_base_query(
     query = (
         select(models.UserItemData)
         .join(models.UserItemData.item)
-        .options(contains_eager(models.UserItemData.item).selectinload(models.Item.manga_meta))
+        .options(
+            contains_eager(models.UserItemData.item)
+            .selectinload(models.Item.manga_meta)
+            .selectinload(models.MangaVolume.chapters),
+            contains_eager(models.UserItemData.item).selectinload(models.Item.series),
+            contains_eager(models.UserItemData.item).selectinload(models.Item.box_set),
+        )
         .where(models.UserItemData.user_id == user_id)
     )
     if status:
@@ -171,3 +200,9 @@ async def update_user_item_data(
         entry_id, update_in.status, update_in.current_page,
     )
     return await get_user_item(db, entry_id, user_id)
+
+
+async def delete_user_item(db: AsyncSession, entry: models.UserItemData) -> None:
+    await db.delete(entry)
+    await db.commit()
+    log.info("UserItemData id=%s deleted (user_id=%s)", entry.id, entry.user_id)

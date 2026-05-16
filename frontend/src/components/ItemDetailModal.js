@@ -1,20 +1,32 @@
 import React, { useState, useEffect } from "react";
-import { createUserEntry, updateItem, updateUserEntry } from "../api";
+import { createUserEntry, updateItem, updateUserEntry, deleteUserEntry } from "../api";
 import { STATUS_OPTIONS, capitalize } from "../constants";
 
 const ItemDetailModal = ({ entry, onClose, onSaved }) => {
-  const [itemData,    setItemData]    = useState(entry.item);
-  const [status,      setStatus]      = useState(entry.status || "unread");
-  const [currentPage, setCurrentPage] = useState(entry.current_page || 0);
-  const [message,     setMessage]     = useState(null);
-  const [saving,      setSaving]      = useState(false);
+  const [itemData,       setItemData]       = useState(entry.item);
+  const [status,         setStatus]         = useState(entry.status || "unread");
+  const [currentPage,    setCurrentPage]    = useState(entry.current_page || 0);
+  const [message,        setMessage]        = useState(null);
+  const [saving,         setSaving]         = useState(false);
+  const [confirmDelete,  setConfirmDelete]  = useState(false);
+  const [deleting,       setDeleting]       = useState(false);
 
   useEffect(() => {
     setItemData(entry.item);
     setStatus(entry.status || "unread");
     setCurrentPage(entry.current_page || 0);
     setMessage(null);
+    setConfirmDelete(false);
   }, [entry]);
+
+  const handleStatusChange = (newStatus) => {
+    if (newStatus === "completed" && itemData.page_count) {
+      setCurrentPage(itemData.page_count);
+    } else if (status === "completed" && newStatus !== "completed") {
+      setCurrentPage(0);
+    }
+    setStatus(newStatus);
+  };
 
   const saveChanges = async () => {
     setSaving(true); setMessage(null);
@@ -31,6 +43,20 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
       setMessage({ type: "error", text: "Could not save changes." });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setDeleting(true);
+    try {
+      await deleteUserEntry(entry.id);
+      onSaved();
+      onClose();
+    } catch {
+      setMessage({ type: "error", text: "Could not delete entry." });
+      setDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -68,7 +94,12 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
                 ["Year",      itemData.publication_year || "—"],
                 ["Language",  itemData.language || "—"],
                 ...(itemData.isbn ? [["ISBN", itemData.isbn]] : []),
-                ...(itemData.volume_title
+                ...(itemData.series
+                  ? [[
+                      "Series",
+                      `${itemData.series.name}${itemData.volume_number ? ` — Vol. ${itemData.volume_number}` : ""}`,
+                    ]]
+                  : itemData.volume_title
                   ? [[
                       "Series",
                       `${itemData.volume_title}${itemData.volume_number ? ` — Vol. ${itemData.volume_number}` : ""}`,
@@ -85,7 +116,7 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
 
               <div className="field">
                 <label>Status</label>
-                <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <select value={status} onChange={(e) => handleStatusChange(e.target.value)}>
                   {STATUS_OPTIONS.map((s) => (
                     <option key={s} value={s}>{capitalize(s)}</option>
                   ))}
@@ -138,6 +169,16 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
         </div>
 
         <div className="modal-footer">
+          {!entry.isImport && (
+            <button
+              className={`btn ${confirmDelete ? "btn-danger-confirm" : "btn-danger"}`}
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{ marginRight: "auto" }}
+            >
+              {deleting ? "Deleting…" : confirmDelete ? "Confirm delete?" : "Delete"}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <button className="btn btn-primary" onClick={saveChanges} disabled={saving}>
             {saving ? "Saving…" : "Save changes"}

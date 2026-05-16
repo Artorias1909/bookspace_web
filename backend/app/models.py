@@ -24,8 +24,27 @@ class Series(Base):
     name = Column(String(256), nullable=False, index=True)
     type = Column(String(32), nullable=False)
     total_volumes = Column(Integer, nullable=True)
+    cover_url = Column(String(1024), nullable=True)
 
     items = relationship("Item", back_populates="series")
+    box_sets = relationship("BoxSet", back_populates="series")
+
+
+class BoxSet(Base):
+    """A collector box / Sammelschuber containing a range of volumes from a series."""
+    __tablename__ = "box_sets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    series_id = Column(Integer, ForeignKey("series.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String(256), nullable=True)          # arc name, e.g. "East Blue"
+    isbn = Column(String(32), nullable=True, unique=True, index=True)
+    volume_from = Column(Integer, nullable=False)
+    volume_to = Column(Integer, nullable=False)
+    cover_url = Column(String(1024), nullable=True)
+    publication_year = Column(Integer, nullable=True)
+
+    series = relationship("Series", back_populates="box_sets")
+    items = relationship("Item", back_populates="box_set")
 
 
 class Item(Base):
@@ -47,8 +66,10 @@ class Item(Base):
     series_id = Column(Integer, ForeignKey("series.id", ondelete="SET NULL"), nullable=True, index=True)
     volume_number = Column(String(64), nullable=True, index=True)
     volume_title = Column(String(256), nullable=True)
+    box_set_id = Column(Integer, ForeignKey("box_sets.id", ondelete="SET NULL"), nullable=True, index=True)
 
     series = relationship("Series", back_populates="items")
+    box_set = relationship("BoxSet", back_populates="items")
     library_entries = relationship("UserItemData", back_populates="item", cascade="all, delete-orphan")
     # One-to-one extension: only present when media_type == "manga"
     manga_meta = relationship("MangaVolume", back_populates="item", uselist=False, cascade="all, delete-orphan")
@@ -135,3 +156,7 @@ class UserItemData(Base):
 
     user = relationship("User", back_populates="items")
     item = relationship("Item", back_populates="library_entries")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", name="uq_user_item_data_user_item"),
+    )

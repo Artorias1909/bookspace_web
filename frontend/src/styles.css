@@ -115,14 +115,16 @@ img { display: block; }
 /* ── Form controls ─────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field label { font-size: 0.85rem; font-weight: 500; color: var(--text-2); }
-.field input, .field select, .field textarea {
+.field input, .field select, .field textarea,
+.input {
   background: var(--bg-input); border: 1px solid var(--border);
   border-radius: var(--radius-sm); color: var(--text-1);
   padding: 10px 12px; font-size: 0.925rem;
   transition: border-color 0.15s;
   width: 100%;
 }
-.field input:focus, .field select:focus, .field textarea:focus {
+.field input:focus, .field select:focus, .field textarea:focus,
+.input:focus {
   outline: none; border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
@@ -342,6 +344,48 @@ img { display: block; }
 /* ── Misc ───────────────────────────────────────────────────── */
 .section-count { font-size: 0.82rem; color: var(--text-2); margin-left: 4px; }
 .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* ── Series group card ──────────────────────────────────────── */
+.series-group-card { cursor: pointer; }
+.series-group-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.series-count-badge {
+  position: absolute; bottom: 6px; right: 6px;
+  background: rgba(0,0,0,0.75); color: #fff;
+  font-size: 0.72rem; font-weight: 700; padding: 2px 7px;
+  border-radius: 99px; display: flex; align-items: center; gap: 4px;
+  backdrop-filter: blur(4px);
+}
+.status-badge.series { background: rgba(56,189,248,0.15); color: #38bdf8; }
+.series-group-row { cursor: pointer; }
+.series-group-row:hover td { background: var(--bg-raised); }
+
+/* ── Series modal volume list ───────────────────────────────── */
+.series-volume-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 24px; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+.series-volume-row:last-child { border-bottom: none; }
+.series-volume-row:hover { background: var(--bg-raised); }
+.series-volume-cover { width: 40px; height: 56px; flex-shrink: 0; border-radius: 4px; overflow: hidden; }
+.series-volume-cover img { width: 100%; height: 100%; object-fit: cover; }
+.series-volume-cover-placeholder {
+  width: 100%; height: 100%; background: var(--bg-raised);
+  display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+}
+.series-volume-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.series-volume-title { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.series-volume-subtitle { font-size: 0.78rem; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.series-volume-progress { flex-shrink: 0; }
+
+/* ── Delete confirm button ──────────────────────────────────── */
+.btn-danger-confirm {
+  background: rgba(248,113,113,0.25); color: #f87171;
+  border: 1px solid rgba(248,113,113,0.5);
+  animation: pulse-danger 0.3s ease;
+}
+@keyframes pulse-danger { from { transform: scale(0.97); } to { transform: scale(1); } }
 
 @media (max-width: 640px) {
   .detail-grid { grid-template-columns: 1fr; }

@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useLibrary } from "../hooks/useLibrary";
 import { STATUS_TABS } from "../constants";
 import ItemCardGrid from "./ItemCardGrid";
 import ItemTable from "./ItemTable";
 import ItemDetailModal from "./ItemDetailModal";
+import SeriesModal from "./SeriesModal";
 import AddBookPanel from "./AddBookPanel";
 
 const SearchIcon = () => (
@@ -28,6 +29,41 @@ const ListIcon = () => (
   </svg>
 );
 
+function groupEntries(entries) {
+  const seriesMap = {};
+  const result = [];
+
+  for (const entry of entries) {
+    const sid = entry.item.series_id;
+    if (sid) {
+      if (!seriesMap[sid]) {
+        seriesMap[sid] = {
+          type: "series",
+          id: `series-${sid}`,
+          seriesId: sid,
+          seriesName: entry.item.series?.name || entry.item.volume_title || "Unknown Series",
+          seriesCover: entry.item.series?.cover_url || null,
+          seriesData: entry.item.series || null,
+          entries: [],
+        };
+      }
+      seriesMap[sid].entries.push(entry);
+    } else {
+      result.push({ type: "single", id: entry.id, entry });
+    }
+  }
+
+  for (const group of Object.values(seriesMap)) {
+    if (group.entries.length >= 2) {
+      result.push(group);
+    } else {
+      result.push({ type: "single", id: group.entries[0].id, entry: group.entries[0] });
+    }
+  }
+
+  return result;
+}
+
 const LibraryDashboard = () => {
   const {
     viewMode, setViewMode,
@@ -37,8 +73,23 @@ const LibraryDashboard = () => {
     error, loading, refresh,
   } = useLibrary();
 
-  const [selectedEntry, setSelectedEntry] = useState(null);
-  const [showAddPanel,  setShowAddPanel]  = useState(false);
+  const [selectedEntry,    setSelectedEntry]    = useState(null);
+  const [selectedSeriesId, setSelectedSeriesId] = useState(null);
+  const [showAddPanel,     setShowAddPanel]      = useState(false);
+
+  const displayItems = useMemo(() => groupEntries(entries), [entries]);
+
+  const selectedSeriesGroup = useMemo(
+    () => displayItems.find((d) => d.type === "series" && d.seriesId === selectedSeriesId) || null,
+    [displayItems, selectedSeriesId],
+  );
+
+  // Auto-close series modal when all its volumes are deleted
+  useEffect(() => {
+    if (selectedSeriesId && !loading && !selectedSeriesGroup) {
+      setSelectedSeriesId(null);
+    }
+  }, [selectedSeriesId, selectedSeriesGroup, loading]);
 
   const isFiltered = search || activeStatus !== "all";
 
@@ -100,7 +151,7 @@ const LibraryDashboard = () => {
       {/* Book list */}
       {loading ? (
         <div className="empty-state"><p>Loading…</p></div>
-      ) : entries.length === 0 ? (
+      ) : displayItems.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📚</div>
           <h3>{isFiltered ? "No books found" : "Your library is empty"}</h3>
@@ -116,9 +167,17 @@ const LibraryDashboard = () => {
           )}
         </div>
       ) : viewMode === "grid" ? (
-        <ItemCardGrid entries={entries} onSelect={setSelectedEntry} />
+        <ItemCardGrid
+          displayItems={displayItems}
+          onSelect={setSelectedEntry}
+          onSelectSeries={(g) => setSelectedSeriesId(g.seriesId)}
+        />
       ) : (
-        <ItemTable entries={entries} onSelect={setSelectedEntry} />
+        <ItemTable
+          displayItems={displayItems}
+          onSelect={setSelectedEntry}
+          onSelectSeries={(g) => setSelectedSeriesId(g.seriesId)}
+        />
       )}
 
       {/* Pagination */}
@@ -137,6 +196,17 @@ const LibraryDashboard = () => {
       {/* Modals */}
       {showAddPanel && (
         <AddBookPanel onClose={() => setShowAddPanel(false)} onSaved={refresh} />
+      )}
+      {selectedSeriesGroup && (
+        <SeriesModal
+          seriesId={selectedSeriesGroup.seriesId}
+          seriesName={selectedSeriesGroup.seriesName}
+          seriesData={selectedSeriesGroup.seriesData}
+          entries={selectedSeriesGroup.entries}
+          onClose={() => setSelectedSeriesId(null)}
+          onSelectEntry={setSelectedEntry}
+          onSaved={refresh}
+        />
       )}
       {selectedEntry && (
         <ItemDetailModal

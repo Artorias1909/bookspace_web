@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, or_, func, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,7 @@ log = logging.getLogger("bookspace.crud")
 _ITEM_LOAD = [
     selectinload(models.Item.series),
     selectinload(models.Item.manga_meta).selectinload(models.MangaVolume.chapters),
+    selectinload(models.Item.box_set),
 ]
 
 
@@ -36,13 +37,28 @@ async def get_item(db: AsyncSession, item_id: int) -> Optional[models.Item]:
     return item
 
 
+async def get_item_by_isbn(db: AsyncSession, isbn: str) -> Optional[models.Item]:
+    result = await db.execute(
+        select(models.Item).options(*_ITEM_LOAD).where(models.Item.isbn == isbn)
+    )
+    return result.scalars().first()
+
+
 async def search_items(
     db: AsyncSession, q: str, limit: int = 25, offset: int = 0
 ) -> List[models.Item]:
+    pattern = f"%{q}%"
     result = await db.execute(
         select(models.Item)
         .options(*_ITEM_LOAD)
-        .where(models.Item.title.ilike(f"%{q}%"))
+        .where(
+            or_(
+                models.Item.title.ilike(pattern),
+                func.cast(models.Item.authors, String).ilike(pattern),
+                models.Item.genre.ilike(pattern),
+                models.Item.volume_title.ilike(pattern),
+            )
+        )
         .limit(limit)
         .offset(offset)
     )

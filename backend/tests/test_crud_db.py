@@ -65,6 +65,41 @@ async def test_get_series_not_found(db_session):
 
 
 @pytest.mark.asyncio
+async def test_find_or_create_series_creates_new(db_session):
+    s = await crud.find_or_create_series(db_session, "One Piece", "manga")
+    assert s.id is not None
+    assert s.name == "One Piece"
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_series_returns_existing(db_session):
+    first = await crud.find_or_create_series(db_session, "Bleach", "manga")
+    second = await crud.find_or_create_series(db_session, "BLEACH", "manga")
+    assert first.id == second.id
+
+
+@pytest.mark.asyncio
+async def test_find_series_by_name_found(db_session):
+    await crud.create_series(db_session, schemas.SeriesCreate(name="Fairy Tail", type="manga"))
+    found = await crud.find_series_by_name(db_session, "Fairy Tail")
+    assert found is not None
+    assert found.name == "Fairy Tail"
+
+
+@pytest.mark.asyncio
+async def test_find_series_by_name_not_found(db_session):
+    assert await crud.find_series_by_name(db_session, "Does Not Exist") is None
+
+
+@pytest.mark.asyncio
+async def test_find_series_by_name_prefers_manga(db_session):
+    await crud.create_series(db_session, schemas.SeriesCreate(name="Twin Peaks", type="book"))
+    manga = await crud.create_series(db_session, schemas.SeriesCreate(name="Twin Peaks", type="manga"))
+    found = await crud.find_series_by_name(db_session, "Twin Peaks")
+    assert found.id == manga.id
+
+
+@pytest.mark.asyncio
 async def test_list_series(db_session):
     await crud.create_series(db_session, schemas.SeriesCreate(name="A", type="book"))
     await crud.create_series(db_session, schemas.SeriesCreate(name="B", type="comic"))
@@ -392,3 +427,181 @@ async def test_upsert_manga_volume_none_chapters_preserves(db_session):
     assert len(updated.chapters) == 1
     assert updated.chapters[0].title == "Keep"
     assert updated.demographic == "josei"
+
+
+# ---------------------------------------------------------------------------
+# BoxSet CRUD
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_box_set(db_session):
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="One Piece", type="manga"))
+    box = await crud.create_box_set(
+        db_session,
+        series_id=series.id,
+        name="East Blue",
+        isbn="978-3551024374",
+        volume_from=1,
+        volume_to=12,
+        cover_url="https://example.com/cover.jpg",
+        publication_year=2022,
+    )
+    assert box.id is not None
+    assert box.volume_from == 1
+    assert box.volume_to == 12
+    assert box.isbn == "978-3551024374"
+
+
+@pytest.mark.asyncio
+async def test_get_box_set_by_isbn_found(db_session):
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Naruto", type="manga"))
+    await crud.create_box_set(db_session, series_id=series.id, name="Arc1", isbn="9783551234567", volume_from=1, volume_to=5)
+    found = await crud.get_box_set_by_isbn(db_session, "9783551234567")
+    assert found is not None
+    assert found.name == "Arc1"
+
+
+@pytest.mark.asyncio
+async def test_get_box_set_by_isbn_not_found(db_session):
+    assert await crud.get_box_set_by_isbn(db_session, "0000000000000") is None
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_volume_item_creates_placeholder(db_session):
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Bleach", type="manga"))
+    item = await crud.find_or_create_volume_item(
+        db_session,
+        series_id=series.id,
+        series_name="Bleach",
+        volume_number=3,
+        media_type="manga",
+        authors=["Tite Kubo"],
+        publication_year=2002,
+    )
+    assert item.id is not None
+    assert item.volume_number == "3"
+    assert item.series_id == series.id
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_volume_item_returns_existing(db_session):
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Dragon Ball", type="manga"))
+    first = await crud.find_or_create_volume_item(
+        db_session, series_id=series.id, series_name="Dragon Ball",
+        volume_number=1, media_type="manga", authors=[], publication_year=None,
+    )
+    second = await crud.find_or_create_volume_item(
+        db_session, series_id=series.id, series_name="Dragon Ball",
+        volume_number=1, media_type="manga", authors=[], publication_year=None,
+    )
+    assert first.id == second.id
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_volume_item_updates_box_set_id(db_session):
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Hunter x Hunter", type="manga"))
+    box = await crud.create_box_set(
+        db_session, series_id=series.id, name="Arc", isbn="9783551999001",
+        volume_from=1, volume_to=3,
+    )
+    existing = await crud.find_or_create_volume_item(
+        db_session, series_id=series.id, series_name="Hunter x Hunter",
+        volume_number=1, media_type="manga", authors=[], publication_year=None,
+    )
+    assert existing.box_set_id is None
+    updated = await crud.find_or_create_volume_item(
+        db_session, series_id=series.id, series_name="Hunter x Hunter",
+        volume_number=1, media_type="manga", authors=[], publication_year=None,
+        box_set_id=box.id,
+    )
+    assert updated.id == existing.id
+    assert updated.box_set_id == box.id
+
+
+# ---------------------------------------------------------------------------
+# get_user_item_by_item_id
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_user_item_by_item_id_found(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="quentin", password="pass1234"))
+    item = await crud.create_item(db_session, make_item_create(title="Dune"))
+    entry = await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id))
+    found = await crud.get_user_item_by_item_id(db_session, user.id, item.id)
+    assert found is not None
+    assert found.id == entry.id
+
+
+@pytest.mark.asyncio
+async def test_get_user_item_by_item_id_not_found(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="rachel", password="pass1234"))
+    assert await crud.get_user_item_by_item_id(db_session, user.id, 9999) is None
+
+
+@pytest.mark.asyncio
+async def test_create_user_item_data_duplicate_raises(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="samuel", password="pass1234"))
+    item = await crud.create_item(db_session, make_item_create(title="The Road"))
+    await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id))
+    with pytest.raises(ValueError, match="already_in_library"):
+        await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id))
+
+
+# ---------------------------------------------------------------------------
+# delete_user_series_entries / bulk_update_series_status
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_delete_user_series_entries(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="tina", password="pass1234"))
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Attack on Titan", type="manga"))
+    for i in range(3):
+        item = await crud.create_item(db_session, make_item_create(title=f"AoT {i}", series_id=series.id))
+        await crud.assign_item_to_series(db_session, item.id, series.id, str(i))
+        await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id))
+    count = await crud.delete_user_series_entries(db_session, user.id, series.id)
+    assert count == 3
+    total = await crud.count_user_items(db_session, user.id)
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_user_series_entries_only_affects_user(db_session):
+    user_a = await crud.create_user(db_session, schemas.UserCreate(username="uma", password="pass1234"))
+    user_b = await crud.create_user(db_session, schemas.UserCreate(username="victor", password="pass1234"))
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Vinland Saga", type="manga"))
+    item = await crud.create_item(db_session, make_item_create(title="VS 1"))
+    await crud.assign_item_to_series(db_session, item.id, series.id, "1")
+    await crud.create_user_item_data(db_session, user_a.id, schemas.UserItemDataCreate(item_id=item.id))
+    await crud.create_user_item_data(db_session, user_b.id, schemas.UserItemDataCreate(item_id=item.id))
+    count = await crud.delete_user_series_entries(db_session, user_a.id, series.id)
+    assert count == 1
+    assert await crud.count_user_items(db_session, user_b.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_series_status(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="wendy", password="pass1234"))
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="Berserk", type="manga"))
+    for i in range(2):
+        item = await crud.create_item(db_session, make_item_create(title=f"Berserk {i}"))
+        await crud.assign_item_to_series(db_session, item.id, series.id, str(i))
+        await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id, status="unread"))
+    count = await crud.bulk_update_series_status(db_session, user.id, series.id, "reading")
+    assert count == 2
+    rows = await crud.list_user_items(db_session, user.id)
+    assert all(r.status == "reading" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_series_status_completed(db_session):
+    user = await crud.create_user(db_session, schemas.UserCreate(username="xavier", password="pass1234"))
+    series = await crud.create_series(db_session, schemas.SeriesCreate(name="FMA", type="manga"))
+    item = await crud.create_item(db_session, make_item_create(title="FMA 1", page_count=200))
+    await crud.assign_item_to_series(db_session, item.id, series.id, "1")
+    await crud.create_user_item_data(db_session, user.id, schemas.UserItemDataCreate(item_id=item.id))
+    count = await crud.bulk_update_series_status(db_session, user.id, series.id, "completed")
+    assert count == 1
+    rows = await crud.list_user_items(db_session, user.id)
+    assert rows[0].status == "completed"
+    assert rows[0].progress_percent == 100.0

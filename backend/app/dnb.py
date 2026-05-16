@@ -166,8 +166,9 @@ def _parse_marc_record(record: ET.Element, isbn_fallback: str = "") -> Dict[str,
         if series_name:
             break
 
-    # Volume number: prefer 490/830 $v, fall back to 245 $n
-    volume_number = series_volume or volume_number_from_245
+    # Volume number: prefer 490/830 $v, fall back to 245 $n.
+    # Normalize raw strings like "Band 1", "Bd. 03", "Vol. 1" → "1", "3", "1".
+    volume_number = _normalize_volume_number(series_volume or volume_number_from_245)
 
     # ── Authors (100 = main entry, 700 = additional) ──────────────────────
     authors: List[str] = []
@@ -296,6 +297,26 @@ def _parse_marc_record(record: ET.Element, isbn_fallback: str = "") -> Dict[str,
         "dnb_id": dnb_id,
         "chapters": chapters,
     }
+
+
+# ---------------------------------------------------------------------------
+# Volume number normalisation
+# ---------------------------------------------------------------------------
+
+def _normalize_volume_number(raw: Optional[str]) -> Optional[str]:
+    """Extract a clean numeric string from MARC 490/830 $v values.
+
+    Handles: "Band 1", "Bd. 03", "Vol. 2", "1.", "1.5", "12" → "1", "3", "2", "1", "1.5", "12"
+    Leading zeros are removed ("03" → "3"). Decimal volumes are preserved ("1.5").
+    """
+    if not raw:
+        return None
+    m = re.search(r"(\d+(?:[.,]\d+)?)", raw)
+    if not m:
+        return raw.strip()
+    num = m.group(1).replace(",", ".")
+    fval = float(num)
+    return str(int(fval)) if fval == int(fval) else str(fval)
 
 
 # ---------------------------------------------------------------------------

@@ -23,8 +23,11 @@ async def create_user_item(
     try:
         entry = await crud.create_user_item_data(db, current_user.id, entry_in)
     except ValueError as exc:
+        msg = str(exc)
+        if msg == "already_in_library":
+            raise HTTPException(status_code=409, detail="Dieses Buch ist bereits in deiner Bibliothek.")
         log.warning("Invalid data for create_user_item user=%s: %s", current_user.id, exc)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=msg)
     except SQLAlchemyError:
         log.error("Database error creating library entry for user=%s", current_user.id, exc_info=True)
         raise HTTPException(status_code=500, detail="Could not add to library. Please try again.")
@@ -90,3 +93,23 @@ async def update_user_item(
     except SQLAlchemyError:
         log.error("Database error updating entry id=%s", entry_id, exc_info=True)
         raise HTTPException(status_code=500, detail="Could not save changes. Please try again.")
+
+
+@router.delete("/{entry_id}", status_code=204)
+async def delete_user_item(
+    entry_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: schemas.UserRead = Depends(get_current_user),
+):
+    try:
+        entry = await crud.get_user_item(db, entry_id, current_user.id)
+    except SQLAlchemyError:
+        log.error("Database error fetching entry id=%s for delete user=%s", entry_id, current_user.id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not load entry. Please try again.")
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"Library entry {entry_id} not found.")
+    try:
+        await crud.delete_user_item(db, entry)
+    except SQLAlchemyError:
+        log.error("Database error deleting entry id=%s", entry_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not delete entry. Please try again.")

@@ -351,6 +351,15 @@ def test_volume_number_245n_fallback():
     assert r["volume_number"] == "5"
 
 
+def test_normalize_volume_number_no_digits():
+    """Raw string with no digits returns the stripped string unchanged."""
+    assert dnb._normalize_volume_number("Sonderband") == "Sonderband"
+
+
+def test_normalize_volume_number_none():
+    assert dnb._normalize_volume_number(None) is None
+
+
 def test_demographic_all_values():
     for dnb_subject, expected in [
         ("Shōnen-Manga", "shounen"),

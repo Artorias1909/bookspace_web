@@ -10,6 +10,7 @@ services:
       - bookspace_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+
   backend:
     build:
       context: ./backend
@@ -19,12 +20,25 @@ services:
       - db
     ports:
       - "8000:8000"
+
   frontend:
     build:
       context: ./frontend
-    ports:
-      - "3000:80"
+      args:
+        # Empty string → relative URLs, nginx proxy handles API routing
+        REACT_APP_API_BASE: ""
     environment:
       - CHOKIDAR_USEPOLLING=true
+
+  proxy:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
 volumes:
   bookspace_data:
