@@ -194,3 +194,113 @@ async def test_item_read_includes_manga_meta(client):
     data = resp.json()
     assert data["manga_meta"] is not None
     assert data["manga_meta"]["demographic"] == "shounen"
+
+
+# ---------------------------------------------------------------------------
+# POST /items/{item_id}/chapters/refresh
+# ---------------------------------------------------------------------------
+
+_DNB_CHAPTERS = [
+    {"order_index": 0, "chapter_number": "1", "title": "Der Anfang"},
+    {"order_index": 1, "chapter_number": "2", "title": "Das Abenteuer"},
+]
+
+_DNB_RESPONSE_WITH_CHAPTERS = {
+    "chapters": _DNB_CHAPTERS,
+    "title": "Naruto",
+    "media_type": "manga",
+}
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_requires_auth(client):
+    resp = await client.post("/items/1/chapters/refresh")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_item_not_found(client):
+    h = await create_user_and_login(client)
+    resp = await client.post("/items/9999/chapters/refresh", headers=h)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_forbidden_when_not_in_library(client):
+    """User B cannot refresh chapters for an item only User A owns."""
+    h_a = await create_user_and_login(client, username="ch_user_a", password="pass1234")
+    h_b = await create_user_and_login(client, username="ch_user_b", password="pass1234")
+    item = await _create_and_own_item(client, h_a, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h_b)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_no_isbn(client):
+    """Item without ISBN cannot be refreshed from DNB."""
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h)
+    resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 404
+    assert "isbn" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_dnb_no_data(client):
+    """DNB returns None → 404."""
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    with patch("app.routers.manga.dnb.fetch_dnb_by_isbn", return_value=None):
+        resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_dnb_no_chapters(client):
+    """DNB returns metadata but zero chapters → 404."""
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    with patch("app.routers.manga.dnb.fetch_dnb_by_isbn", return_value={"chapters": [], "title": "Naruto"}):
+        resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_success(client):
+    """DNB returns chapters → MangaVolume is updated and returned."""
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    with patch("app.routers.manga.dnb.fetch_dnb_by_isbn", return_value=_DNB_RESPONSE_WITH_CHAPTERS):
+        resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["chapters"]) == 2
+    assert data["chapters"][0]["chapter_number"] == "1"
+    assert data["chapters"][0]["title"] == "Der Anfang"
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_replaces_existing(client):
+    """A refresh overwrites previously stored chapters."""
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    # Set initial chapters via PUT /meta
+    await client.put(f"/items/{item['id']}/meta", json=MANGA_META, headers=h)
+    with patch("app.routers.manga.dnb.fetch_dnb_by_isbn", return_value=_DNB_RESPONSE_WITH_CHAPTERS):
+        resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 200
+    chapters = resp.json()["chapters"]
+    assert len(chapters) == 2
+    # Old chapters (697, 698) should be gone
+    numbers = {ch["chapter_number"] for ch in chapters}
+    assert "697" not in numbers
+
+
+@pytest.mark.asyncio
+async def test_refresh_chapters_db_error(client):
+    h = await create_user_and_login(client)
+    item = await _create_and_own_item(client, h, {**ITEM_PAYLOAD, "isbn": "9781234567890"})
+    with patch("app.routers.manga.dnb.fetch_dnb_by_isbn", return_value=_DNB_RESPONSE_WITH_CHAPTERS), \
+         patch("app.routers.manga.crud.upsert_manga_volume", side_effect=SQLAlchemyError("db")):
+        resp = await client.post(f"/items/{item['id']}/chapters/refresh", headers=h)
+    assert resp.status_code == 500

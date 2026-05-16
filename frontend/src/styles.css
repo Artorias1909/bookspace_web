@@ -322,6 +322,19 @@ img { display: block; }
 .detail-description h4 { font-size: 0.8rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
 .detail-description p { font-size: 0.9rem; color: var(--text-2); line-height: 1.75; }
 
+/* ── Chapter list ───────────────────────────────────────────── */
+.chapter-list { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.chapter-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.chapter-list-header h4 { font-size: 0.8rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin: 0; }
+.chapter-count { font-weight: 400; }
+.btn-xs { padding: 2px 8px; font-size: 0.78rem; }
+.chapter-entries { list-style: none; margin: 0; padding: 0; max-height: 200px; overflow-y: auto; }
+.chapter-entries li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+.chapter-entries li:last-child { border-bottom: none; }
+.chapter-num { flex-shrink: 0; min-width: 28px; color: var(--text-3); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.chapter-title { color: var(--text-2); }
+.chapter-empty { font-size: 0.875rem; color: var(--text-3); font-style: italic; margin: 0; }
+
 /* ── Add Book modal ─────────────────────────────────────────── */
 .add-tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
 .add-tab {

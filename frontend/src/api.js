@@ -38,3 +38,5 @@ export const deleteSeriesFromLibrary = (id) => client.delete(`/series/${id}/libr
 
 export const updateItem = (id, payload) => client.put(`/items/${id}`, payload);
 export const deleteUserEntry = (id) => client.delete(`/user-items/${id}`);
+
+export const refreshChapters = (itemId) => client.post(`/items/${itemId}/chapters/refresh`);

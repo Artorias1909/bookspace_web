@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createUserEntry, updateItem, updateUserEntry, deleteUserEntry } from "../api";
+import { createUserEntry, updateItem, updateUserEntry, deleteUserEntry, refreshChapters } from "../api";
 import { STATUS_OPTIONS, capitalize } from "../constants";
 
 const ItemDetailModal = ({ entry, onClose, onSaved }) => {
@@ -10,11 +10,14 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
   const [saving,         setSaving]         = useState(false);
   const [confirmDelete,  setConfirmDelete]  = useState(false);
   const [deleting,       setDeleting]       = useState(false);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [chapters,       setChapters]       = useState(entry.item.manga_meta?.chapters || []);
 
   useEffect(() => {
     setItemData(entry.item);
     setStatus(entry.status || "unread");
     setCurrentPage(entry.current_page || 0);
+    setChapters(entry.item.manga_meta?.chapters || []);
     setMessage(null);
     setConfirmDelete(false);
   }, [entry]);
@@ -57,6 +60,20 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
       setMessage({ type: "error", text: "Could not delete entry." });
       setDeleting(false);
       setConfirmDelete(false);
+    }
+  };
+
+  const handleRefreshChapters = async () => {
+    setRefreshing(true); setMessage(null);
+    try {
+      const resp = await refreshChapters(itemData.id);
+      setChapters(resp.data.chapters || []);
+      setMessage({ type: "success", text: "Chapters updated." });
+    } catch (err) {
+      const detail = err.response?.data?.detail || "Could not refresh chapters.";
+      setMessage({ type: "error", text: detail });
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -153,6 +170,35 @@ const ItemDetailModal = ({ entry, onClose, onSaved }) => {
               )}
             </div>
           </div>
+
+          {itemData.media_type === "manga" && (
+            <div className="chapter-list">
+              <div className="chapter-list-header">
+                <h4>Chapters {chapters.length > 0 && <span className="chapter-count">({chapters.length})</span>}</h4>
+                {!entry.isImport && itemData.isbn && (
+                  <button
+                    className="btn btn-ghost btn-xs"
+                    onClick={handleRefreshChapters}
+                    disabled={refreshing}
+                  >
+                    {refreshing ? "Refreshing…" : "↻ Refresh"}
+                  </button>
+                )}
+              </div>
+              {chapters.length > 0 ? (
+                <ol className="chapter-entries">
+                  {chapters.map((ch, i) => (
+                    <li key={i}>
+                      {ch.chapter_number && <span className="chapter-num">{ch.chapter_number}</span>}
+                      <span className="chapter-title">{ch.title}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="chapter-empty">No chapter data available.</p>
+              )}
+            </div>
+          )}
 
           {itemData.description && (
             <div className="detail-description">
