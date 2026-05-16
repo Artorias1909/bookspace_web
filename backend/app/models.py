@@ -1,3 +1,11 @@
+"""SQLAlchemy ORM models mapping to the PostgreSQL schema.
+
+Relationship graph:
+    User ──< UserItemData >── Item ──< MangaVolume ──< ChapterEntry
+    Series ──< Item
+    BoxSet ──< Item
+    Series ──< BoxSet
+"""
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Float, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -7,6 +15,7 @@ from .database import Base
 
 
 class User(Base):
+    """Registered user account. The password is never stored in plaintext."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -18,6 +27,7 @@ class User(Base):
 
 
 class Series(Base):
+    """Shared series record grouping related volumes (e.g., a manga run or book trilogy)."""
     __tablename__ = "series"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -48,6 +58,11 @@ class BoxSet(Base):
 
 
 class Item(Base):
+    """A single book, manga, or comic volume. media_type discriminates the subtype.
+
+    When media_type == "manga", a corresponding MangaVolume row holds additional metadata.
+    Items may belong to a Series and/or a BoxSet; both FK columns allow NULL.
+    """
     __tablename__ = "items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -143,6 +158,10 @@ class ChapterEntry(Base):
 
 
 class UserItemData(Base):
+    """Per-user reading state for a single Item (status, current page, calculated progress).
+
+    The (user_id, item_id) pair is unique — a user can add each item only once.
+    """
     __tablename__ = "user_item_data"
 
     id = Column(Integer, primary_key=True, index=True)

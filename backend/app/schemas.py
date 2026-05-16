@@ -1,3 +1,4 @@
+"""Pydantic request/response schemas for validation, serialization, and OpenAPI documentation."""
 from datetime import datetime
 from math import ceil
 from typing import Generic, List, Literal, Optional, TypeVar
@@ -12,20 +13,27 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 
 class Token(BaseModel):
+    """JWT bearer token returned after successful login."""
+
     access_token: str
     token_type: str = "bearer"
 
 
 class UserBase(BaseModel):
+    """Shared username field with length constraints (3–128 characters)."""
+
     username: str = Field(..., min_length=3, max_length=128)
 
 
 class UserCreate(UserBase):
+    """Registration payload: username + password meeting minimum strength requirements."""
+
     password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("password")
     @classmethod
     def password_strength(cls, v: str) -> str:
+        """Require at least one letter and one digit in the password."""
         if not any(c.isalpha() for c in v):
             raise ValueError("Password must contain at least one letter.")
         if not any(c.isdigit() for c in v):
@@ -34,6 +42,7 @@ class UserCreate(UserBase):
 
 
 class UserRead(UserBase):
+    """User representation returned by the API; never includes the password hash."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -45,6 +54,8 @@ class UserRead(UserBase):
 # ---------------------------------------------------------------------------
 
 class SeriesBase(BaseModel):
+    """Shared series fields; type must be one of: book, manga, comic."""
+
     name: str
     type: str = Field(..., pattern="^(book|manga|comic)$")
     total_volumes: Optional[int] = None
@@ -52,24 +63,31 @@ class SeriesBase(BaseModel):
 
 
 class SeriesCreate(SeriesBase):
-    pass
+    """Payload for creating a new series."""
 
 
 class SeriesRead(SeriesBase):
+    """Series as returned by the API, including the generated primary key."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
 
 
 class SeriesStatusUpdate(BaseModel):
+    """Payload to bulk-set the reading status for all volumes of a series."""
+
     status: str = Field(..., pattern="^(unread|reading|completed|owned|wishlist)$")
 
 
 class BulkUpdateResult(BaseModel):
+    """Number of library entries affected by a bulk series operation."""
+
     updated: int
 
 
 class BoxSetRead(BaseModel):
+    """Collector box (Sammelschuber) as returned by the API."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -87,6 +105,8 @@ class BoxSetRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ChapterEntryBase(BaseModel):
+    """A single chapter within a manga volume; order_index controls display order."""
+
     order_index: int
     chapter_number: Optional[str] = None
     title: Optional[str] = None
@@ -95,10 +115,11 @@ class ChapterEntryBase(BaseModel):
 
 
 class ChapterEntryCreate(ChapterEntryBase):
-    pass
+    """Payload for creating a chapter entry within a MangaVolume."""
 
 
 class ChapterEntryRead(ChapterEntryBase):
+    """Chapter entry as returned by the API, including the generated primary key."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -109,6 +130,8 @@ class ChapterEntryRead(ChapterEntryBase):
 # ---------------------------------------------------------------------------
 
 class MangaVolumeBase(BaseModel):
+    """Manga-specific metadata shared across create, update, and read schemas."""
+
     original_title: Optional[str] = None
     romanized_title: Optional[str] = None
     demographic: Optional[str] = Field(
@@ -121,15 +144,20 @@ class MangaVolumeBase(BaseModel):
 
 
 class MangaVolumeCreate(MangaVolumeBase):
+    """Payload for creating or replacing MangaVolume metadata; chapters list is written in full."""
+
     chapters: List[ChapterEntryCreate] = Field(default_factory=list)
 
 
 class MangaVolumeUpdate(MangaVolumeBase):
+    """Partial update payload; when chapters is provided it replaces the entire chapter list."""
+
     # When provided, replaces the entire chapter list
     chapters: Optional[List[ChapterEntryCreate]] = None
 
 
 class MangaVolumeRead(MangaVolumeBase):
+    """MangaVolume as returned by the API, including chapters ordered by order_index."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -141,6 +169,8 @@ class MangaVolumeRead(MangaVolumeBase):
 # ---------------------------------------------------------------------------
 
 class ItemBase(BaseModel):
+    """Core item fields shared across create, update, and read schemas."""
+
     media_type: str = Field("book", pattern="^(book|manga|comic)$")
     title: str
     authors: List[str] = Field(default_factory=list)
@@ -160,20 +190,22 @@ class ItemBase(BaseModel):
     @field_validator("authors", mode="before")
     @classmethod
     def authors_to_list(cls, v):
+        """Coerce a comma-separated author string into a list; lists pass through unchanged."""
         if isinstance(v, str):
             return [x.strip() for x in v.split(",") if x.strip()]
         return v
 
 
 class ItemCreate(ItemBase):
-    pass
+    """Payload for creating a new catalog item."""
 
 
 class ItemUpdate(ItemBase):
-    pass
+    """Payload for fully replacing an existing catalog item's metadata."""
 
 
 class ItemRead(ItemBase):
+    """Item as returned by the API, including nested series, manga_meta, and box_set."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -187,20 +219,25 @@ class ItemRead(ItemBase):
 # ---------------------------------------------------------------------------
 
 class UserItemDataBase(BaseModel):
+    """Shared mutable reading-state fields (status and current page)."""
+
     status: Optional[str] = Field(None, pattern="^(unread|reading|completed|owned|wishlist)$")
     current_page: Optional[int] = None
 
 
 class UserItemDataCreate(UserItemDataBase):
+    """Add an item to a user's library — supply either item_id (existing) or item (new)."""
+
     item_id: Optional[int] = None
     item: Optional[ItemCreate] = None
 
 
 class UserItemDataUpdate(UserItemDataBase):
-    pass
+    """Payload for updating reading status or current page of a library entry."""
 
 
 class UserItemDataRead(UserItemDataBase):
+    """Library entry as returned by the API, including the full nested item and progress."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -215,6 +252,8 @@ class UserItemDataRead(UserItemDataBase):
 # ---------------------------------------------------------------------------
 
 class PagedResponse(BaseModel, Generic[T]):
+    """Generic paginated response wrapper with total count and page metadata."""
+
     items: List[T]
     total: int
     page: int
@@ -223,6 +262,14 @@ class PagedResponse(BaseModel, Generic[T]):
 
     @classmethod
     def build(cls, items: List[T], total: int, page: int, page_size: int) -> "PagedResponse[T]":
+        """Compute page count and wrap items in a PagedResponse.
+
+        Args:
+            items: The slice of results for this page.
+            total: Total number of matching records across all pages.
+            page: Current 1-based page number.
+            page_size: Number of items per page.
+        """
         return cls(
             items=items,
             total=total,
@@ -237,10 +284,14 @@ class PagedResponse(BaseModel, Generic[T]):
 # ---------------------------------------------------------------------------
 
 class ISBNImportRequest(BaseModel):
+    """ISBN to look up; non-digit characters (spaces, hyphens, invisible Unicode) are stripped by the handler."""
+
     isbn: str
 
 
 class ISBNImportResponse(ItemRead):
+    """Item returned after a successful ISBN import; includes source provenance and library status."""
+
     type: Literal["item"] = "item"
     source: str
     raw_metadata: Optional[dict] = None

@@ -1,3 +1,4 @@
+"""Catalog Item router: full-text search, create, read, and update endpoints."""
 import logging
 from typing import List, Optional
 
@@ -21,6 +22,7 @@ async def search_items(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Search the catalog by title, author, genre, or volume title; requires authentication."""
     if not q:
         raise HTTPException(status_code=400, detail="Search query parameter 'q' is required.")
     log.debug("Item search: q=%r limit=%s offset=%s user=%s", q, limit, offset, current_user.id)
@@ -39,6 +41,7 @@ async def create_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Create a standalone catalog item; does not automatically add it to the user's library."""
     log.info("Creating item '%s' (user=%s)", item_in.title, current_user.id)
     try:
         return await crud.create_item(db, item_in)
@@ -53,6 +56,7 @@ async def read_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Fetch a single catalog item by ID with all nested relations; 404 if not found."""
     try:
         item = await crud.get_item(db, item_id)
     except SQLAlchemyError:
@@ -70,6 +74,7 @@ async def update_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Replace item metadata; only the user who owns the item in their library may edit it."""
     try:
         item = await crud.get_item(db, item_id)
     except SQLAlchemyError:

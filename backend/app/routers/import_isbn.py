@@ -1,3 +1,4 @@
+"""ISBN import router: multi-source metadata lookup and automatic item/series/boxset creation."""
 import asyncio
 import logging
 import unicodedata

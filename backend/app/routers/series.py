@@ -1,3 +1,4 @@
+"""Series router: CRUD, bulk status updates, item assignment, and library deletion."""
 import logging
 from typing import List, Optional
 
@@ -19,6 +20,7 @@ async def create_series(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Create a new series record; requires authentication."""
     log.info("Creating series '%s' (user=%s)", series_in.name, current_user.id)
     try:
         return await crud.create_series(db, series_in)
@@ -32,6 +34,7 @@ async def read_series(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """List all series records (up to the default limit); requires authentication."""
     try:
         return await crud.list_series(db)
     except SQLAlchemyError:
@@ -45,6 +48,7 @@ async def get_series(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Fetch a single series by ID; 404 if not found."""
     try:
         series = await crud.get_series(db, series_id)
     except SQLAlchemyError:
@@ -62,6 +66,7 @@ async def update_series(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Replace series metadata; only users who own at least one volume in it may edit; 403 otherwise."""
     try:
         series = await crud.get_series(db, series_id)
     except SQLAlchemyError:
@@ -117,6 +122,7 @@ async def assign_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Assign a catalog item to a series with an optional volume number; item must be in caller's library."""
     try:
         series = await crud.get_series(db, series_id)
     except SQLAlchemyError:
@@ -143,6 +149,7 @@ async def series_items(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Return all catalog items belonging to a series, ordered by volume number."""
     try:
         series = await crud.get_series(db, series_id)
     except SQLAlchemyError:

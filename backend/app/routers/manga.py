@@ -1,3 +1,4 @@
+"""Manga metadata router: read and upsert MangaVolume records for catalog items."""
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException

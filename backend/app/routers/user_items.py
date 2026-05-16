@@ -1,3 +1,4 @@
+"""User-library router: add, list, read, update, and remove personal library entries."""
 import logging
 from typing import Optional
 
@@ -19,6 +20,7 @@ async def create_user_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Add an item to the authenticated user's library; 409 if the item is already present."""
     log.info("Adding library entry for user=%s", current_user.id)
     try:
         entry = await crud.create_user_item_data(db, current_user.id, entry_in)
@@ -45,6 +47,7 @@ async def list_user_items(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Return a paginated, filtered, and sorted view of the authenticated user's library."""
     log.debug(
         "list_user_items user=%s page=%s size=%s sort=%s/%s q=%r status=%r",
         current_user.id, page, page_size, sort_by, sort_dir, q, status,
@@ -64,6 +67,7 @@ async def get_user_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Fetch a single library entry by ID; 404 if not found or not owned by the caller."""
     try:
         entry = await crud.get_user_item(db, entry_id, current_user.id)
     except SQLAlchemyError:
@@ -81,6 +85,7 @@ async def update_user_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Update reading status and/or current page for a library entry; recalculates progress_percent."""
     try:
         entry = await crud.get_user_item(db, entry_id, current_user.id)
     except SQLAlchemyError:
@@ -101,6 +106,7 @@ async def delete_user_item(
     db: AsyncSession = Depends(get_db_session),
     current_user: schemas.UserRead = Depends(get_current_user),
 ):
+    """Remove a library entry from the user's library; 204 on success, 404 if not found."""
     try:
         entry = await crud.get_user_item(db, entry_id, current_user.id)
     except SQLAlchemyError:

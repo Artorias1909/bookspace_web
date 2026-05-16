@@ -1,3 +1,4 @@
+"""Auth router: user registration, JWT login, token logout, and /me profile endpoint."""
 import logging
 from datetime import timedelta
 
@@ -16,6 +17,7 @@ router = APIRouter()
 
 @router.post("/register", response_model=schemas.UserRead, status_code=201, dependencies=[Depends(register_rate_limit)])
 async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_db_session)):
+    """Create a new user account; 400 if the username is taken, rate-limited to 5 attempts/min/IP."""
     log.info("Registration attempt for username '%s'", user_in.username)
     existing = await crud.get_user_by_username(db, user_in.username)
     if existing:
@@ -38,6 +40,7 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db_session),
 ):
+    """Exchange credentials for a JWT bearer token; 401 on bad credentials, rate-limited to 10/min/IP."""
     log.info("Login attempt for username '%s'", form_data.username)
     try:
         user = await crud.authenticate_user(db, form_data.username, form_data.password)
@@ -69,4 +72,5 @@ async def logout(
 
 @router.get("/me", response_model=schemas.UserRead)
 async def read_users_me(current_user: schemas.UserRead = Depends(auth.get_current_user)):
+    """Return the profile of the currently authenticated user."""
     return current_user

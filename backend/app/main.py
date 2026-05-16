@@ -1,3 +1,4 @@
+"""FastAPI application factory: CORS middleware, security headers, request logging, and router mounting."""
 import logging
 import traceback
 from contextlib import asynccontextmanager
@@ -24,6 +25,11 @@ log = logging.getLogger("bookspace.api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """ASGI lifespan handler — run CREATE TABLE on startup, log on shutdown.
+
+    Raises:
+        Exception: Re-raises any database initialisation failure so the server refuses to start.
+    """
     log.info("Starting Bookspace API — initialising database schema")
     try:
         async with engine.begin() as conn:
@@ -52,6 +58,7 @@ _MAX_BODY_BYTES = 1 * 1024 * 1024  # 1 MB
 
 @app.middleware("http")
 async def limit_request_body(request: Request, call_next):
+    """Reject requests whose Content-Length header exceeds 1 MB with HTTP 413."""
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > _MAX_BODY_BYTES:
         return JSONResponse(status_code=413, content={"detail": "Request body too large."})
@@ -60,6 +67,10 @@ async def limit_request_body(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    """Append OWASP-recommended HTTP security headers to every response.
+
+    Uses setdefault so that handlers can override individual headers when needed.
+    """
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -75,6 +86,11 @@ async def security_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    """Structured access-log middleware with status-level-based severity.
+
+    Catches exceptions that bubble out of handlers and returns a generic 500 response,
+    preventing raw tracebacks from leaking to clients.
+    """
     log.info("%s %s", request.method, request.url.path)
     try:
         response = await call_next(request)
@@ -100,6 +116,7 @@ async def log_requests(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all 500 handler for exceptions that escape the middleware chain."""
     log.error(
         "Uncaught %s at %s %s: %s\n%s",
         type(exc).__name__,

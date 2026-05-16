@@ -1,9 +1,20 @@
+"""Application settings loaded once from environment variables at import time."""
 import os
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Settings:
+    """Immutable application configuration derived from environment variables.
+
+    Attributes:
+        database_url: Async-compatible PostgreSQL connection string (asyncpg dialect).
+        secret_key: HMAC secret used to sign JWT tokens; must stay private.
+        algorithm: JWT signing algorithm, always HS256.
+        access_token_expire_minutes: Lifetime of issued access tokens.
+        google_books_api_key: Optional Books API key; empty string uses shared quota.
+        frontend_url: Allowed CORS origin for the React frontend.
+    """
     database_url: str
     secret_key: str
     algorithm: str
@@ -13,6 +24,11 @@ class Settings:
 
 
 def _load() -> Settings:
+    """Construct Settings from environment variables.
+
+    Raises:
+        ValueError: When DATABASE_URL or SECRET_KEY are not set.
+    """
     database_url = os.getenv("DATABASE_URL")
     if not database_url:  # pragma: no cover
         raise ValueError("DATABASE_URL environment variable is required")

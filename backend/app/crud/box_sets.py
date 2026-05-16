@@ -1,3 +1,4 @@
+"""BoxSet CRUD: collector-box creation, ISBN lookup, and placeholder volume creation."""
 import logging
 from typing import List, Optional
 
@@ -19,6 +20,7 @@ async def create_box_set(
     cover_url: Optional[str] = None,
     publication_year: Optional[int] = None,
 ) -> models.BoxSet:
+    """Persist a new BoxSet row and return the refreshed instance."""
     box = models.BoxSet(
         series_id=series_id,
         name=name,
@@ -39,6 +41,7 @@ async def create_box_set(
 
 
 async def get_box_set_by_isbn(db: AsyncSession, isbn: str) -> Optional[models.BoxSet]:
+    """Look up a BoxSet by ISBN, or return None."""
     result = await db.execute(
         select(models.BoxSet).where(models.BoxSet.isbn == isbn)
     )

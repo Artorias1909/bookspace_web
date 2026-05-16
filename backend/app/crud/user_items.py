@@ -1,3 +1,4 @@
+"""Per-user library entry CRUD: add, update, delete, and paginated listing with filtering."""
 import logging
 from typing import List, Optional
 
@@ -33,6 +34,12 @@ async def create_user_item_data(
     user_id: int,
     user_item_data_in: schemas.UserItemDataCreate,
 ) -> models.UserItemData:
+    """Add an item to a user's library, creating the Item row if needed.
+
+    Raises:
+        ValueError("already_in_library"): When the item is already in the user's library.
+        ValueError: When neither item_id nor item is provided, or item_id is not found.
+    """
     from .items import create_item, get_item
 
     if user_item_data_in.item_id:
@@ -79,6 +86,7 @@ async def create_user_item_data(
 async def get_user_item_by_item_id(
     db: AsyncSession, user_id: int, item_id: int
 ) -> Optional[models.UserItemData]:
+    """Return the library entry for (user_id, item_id) with all relations loaded, or None."""
     result = await db.execute(
         select(models.UserItemData)
         .options(*_ENTRY_LOAD)
@@ -107,6 +115,7 @@ async def user_owns_series(db: AsyncSession, user_id: int, series_id: int) -> bo
 async def get_user_item(
     db: AsyncSession, entry_id: int, user_id: int
 ) -> Optional[models.UserItemData]:
+    """Fetch a library entry by its own primary key, scoped to user_id to prevent cross-user access."""
     result = await db.execute(
         select(models.UserItemData)
         .options(*_ENTRY_LOAD)
@@ -160,6 +169,7 @@ async def count_user_items(
     q: Optional[str] = None,
     status: Optional[str] = None,
 ) -> int:
+    """Return the total number of library entries matching the given filters (for pagination)."""
     subq = _user_items_base_query(user_id, q, status).subquery()
     result = await db.execute(select(func.count()).select_from(subq))
     return result.scalar_one()
@@ -175,6 +185,12 @@ async def list_user_items(
     q: Optional[str] = None,
     status: Optional[str] = None,
 ) -> List[models.UserItemData]:
+    """Return a paginated, sorted slice of a user's library entries with all relations loaded.
+
+    Args:
+        sort_by: One of title, author, publication_year, status.
+        sort_dir: "asc" or "desc".
+    """
     _SORT_COLUMNS = {
         "title": models.Item.title,
         "author": models.Item.authors,
@@ -201,6 +217,7 @@ async def update_user_item_data(
     entry: models.UserItemData,
     update_in: schemas.UserItemDataUpdate,
 ) -> models.UserItemData:
+    """Apply status and/or current_page changes, recalculate progress_percent, and persist."""
     entry_id, user_id = entry.id, entry.user_id
     if update_in.status is not None:
         entry.status = update_in.status
@@ -217,6 +234,7 @@ async def update_user_item_data(
 
 
 async def delete_user_item(db: AsyncSession, entry: models.UserItemData) -> None:
+    """Delete a library entry and commit the transaction."""
     await db.delete(entry)
     await db.commit()
     log.info("UserItemData id=%s deleted (user_id=%s)", entry.id, entry.user_id)

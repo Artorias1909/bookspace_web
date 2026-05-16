@@ -1,3 +1,4 @@
+"""JWT-based authentication utilities: password hashing, token creation, revocation, and user resolution."""
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,11 @@ _revoked_jtis: set[str] = set()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Return True if plain_password matches the stored bcrypt hash.
+
+    Any unexpected passlib exception is caught and logged, returning False
+    to avoid leaking error details to callers.
+    """
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
@@ -38,10 +44,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
+    """Hash a plaintext password with bcrypt at work factor 12 (OWASP minimum)."""
     return pwd_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Build a signed HS256 JWT containing the given claims plus `exp` and `jti`.
+
+    Args:
+        data: Claims to embed (must include ``sub`` for the username).
+        expires_delta: Custom lifetime; falls back to ACCESS_TOKEN_EXPIRE_MINUTES.
+
+    Returns:
+        Encoded JWT string.
+    """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
@@ -72,6 +88,12 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> schemas.UserRead:
+    """FastAPI dependency: decode JWT, reject revoked tokens, and resolve the user from DB.
+
+    Raises:
+        HTTPException 401: When the token is missing, malformed, expired, revoked,
+            or references an unknown user.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

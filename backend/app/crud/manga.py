@@ -1,3 +1,4 @@
+"""MangaVolume CRUD: create or replace manga-specific metadata and chapter lists."""
 import logging
 from typing import Optional
 

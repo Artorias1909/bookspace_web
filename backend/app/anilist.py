@@ -76,6 +76,11 @@ async def fetch_anilist_by_title(title: str) -> Optional[Dict[str, Any]]:
 
 
 def _parse(media: Dict[str, Any], searched_title: str) -> Dict[str, Any]:
+    """Extract cover URL, Japanese/Romaji titles, publication year, and staff from an AniList Media object.
+
+    Authors list is only included in the result when at least one staff member is found,
+    so that DNB's more precise author data is not overwritten by an empty list.
+    """
     titles = media.get("title", {})
     cover = media.get("coverImage", {})
     start = media.get("startDate") or {}

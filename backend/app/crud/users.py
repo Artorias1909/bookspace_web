@@ -1,3 +1,4 @@
+"""User lookup, creation, and credential verification against the database."""
 import logging
 from typing import Optional
 
@@ -10,11 +11,13 @@ log = logging.getLogger("bookspace.crud")
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[models.User]:
+    """Return the User with the given username, or None if not found."""
     result = await db.execute(select(models.User).where(models.User.username == username))
     return result.scalars().first()
 
 
 async def create_user(db: AsyncSession, user_in: schemas.UserCreate) -> models.User:
+    """Hash the password, persist a new User row, and return the refreshed instance."""
     hashed_password = auth.get_password_hash(user_in.password)
     user = models.User(username=user_in.username, hashed_password=hashed_password)
     db.add(user)
@@ -27,6 +30,7 @@ async def create_user(db: AsyncSession, user_in: schemas.UserCreate) -> models.U
 async def authenticate_user(
     db: AsyncSession, username: str, password: str
 ) -> Optional[models.User]:
+    """Verify username and bcrypt-hashed password; return the User on success or None on failure."""
     user = await get_user_by_username(db, username)
     if not user:
         log.warning("Login failed — unknown user '%s'", username)
