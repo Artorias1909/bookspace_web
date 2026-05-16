@@ -1,10 +1,11 @@
 import pytest
 from unittest.mock import patch, AsyncMock
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from fastapi import Request
 
 from tests.conftest import create_user_and_login
 import app.rate_limit as _rl
+import app.auth as _auth
 from app.rate_limit import _get_client_ip
 
 
@@ -28,6 +29,15 @@ async def test_register_db_error(client):
     with patch("app.routers.auth.crud.create_user", side_effect=SQLAlchemyError("db fail")):
         resp = await client.post("/auth/register", json={"username": "err", "password": "pass1234"})
     assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_register_race_condition_returns_400(client):
+    """IntegrityError from concurrent duplicate registration → 400, not 500."""
+    with patch("app.routers.auth.crud.create_user", side_effect=IntegrityError(None, None, Exception("dup"))):
+        resp = await client.post("/auth/register", json={"username": "race_user", "password": "pass1234"})
+    assert resp.status_code == 400
+    assert "already registered" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -70,6 +80,21 @@ async def test_me(client):
     resp = await client.get("/auth/me", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["username"] == "meuser"
+
+
+@pytest.mark.asyncio
+async def test_logout_invalidates_token(client):
+    """After logout the same token is rejected with 401."""
+    _rl._buckets.clear()
+    h = await create_user_and_login(client, "logout_user", "pass1234")
+    # Confirm token is valid
+    assert (await client.get("/auth/me", headers=h)).status_code == 200
+    # Logout
+    resp = await client.post("/auth/logout", headers=h)
+    assert resp.status_code == 204
+    # Token is now revoked
+    assert (await client.get("/auth/me", headers=h)).status_code == 401
+    _auth._revoked_jtis.clear()  # cleanup so other tests are unaffected
 
 
 @pytest.mark.asyncio

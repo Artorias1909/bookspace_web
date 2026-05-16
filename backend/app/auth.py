@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -19,8 +20,13 @@ SECRET_KEY = settings.secret_key
 ALGORITHM  = settings.algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt with work factor 12 (OWASP minimum recommendation)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+# In-memory set of revoked JWT IDs. Resets on server restart (acceptable for
+# a single-instance deployment; replace with Redis for multi-instance/HA).
+_revoked_jtis: set[str] = set()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -41,6 +47,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode["exp"] = expire
+    to_encode["jti"] = str(uuid.uuid4())
     token = _jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     log.debug(
         "Access token created for '%s', expires in %s min",
@@ -48,6 +55,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         settings.access_token_expire_minutes,
     )
     return token
+
+
+def revoke_token(token: str) -> None:
+    """Add the token's JTI to the revocation set. No-op for invalid/expired tokens."""
+    try:
+        payload = _jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        jti = payload.get("jti")
+        if jti:
+            _revoked_jtis.add(jti)
+    except _jwt.PyJWTError:
+        pass
 
 
 async def get_current_user(
@@ -64,6 +82,10 @@ async def get_current_user(
         username: str = payload.get("sub")
         if username is None:
             log.warning("JWT token missing 'sub' claim")
+            raise credentials_exception
+        jti = payload.get("jti")
+        if jti and jti in _revoked_jtis:
+            log.warning("JWT with revoked JTI '%s' was presented", jti)
             raise credentials_exception
     except _jwt.PyJWTError as exc:
         log.warning("JWT decode failed: %s", exc)

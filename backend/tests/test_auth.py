@@ -1,5 +1,5 @@
 import pytest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch, AsyncMock
 
 import jwt
@@ -86,3 +86,48 @@ async def test_get_current_user_unknown_user():
     with pytest.raises(HTTPException) as exc_info:
         await _call_get_current_user(token, db_user=None)
     assert exc_info.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Token revocation
+# ---------------------------------------------------------------------------
+
+def test_revoke_token_adds_jti():
+    token = auth_module.create_access_token({"sub": "alice"})
+    auth_module.revoke_token(token)
+    payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+    assert payload["jti"] in auth_module._revoked_jtis
+    auth_module._revoked_jtis.discard(payload["jti"])  # cleanup
+
+
+def test_revoke_token_invalid_token_is_noop():
+    before = len(auth_module._revoked_jtis)
+    auth_module.revoke_token("not.a.valid.token")
+    assert len(auth_module._revoked_jtis) == before
+
+
+def test_revoke_token_no_jti_is_noop():
+    # Manually encode a token without a JTI claim
+    token = jwt.encode(
+        {"sub": "alice", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        SECRET,
+        algorithm=ALGO,
+    )
+    before = len(auth_module._revoked_jtis)
+    auth_module.revoke_token(token)
+    assert len(auth_module._revoked_jtis) == before
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_revoked_jti():
+    token = auth_module.create_access_token({"sub": "alice"})
+    payload = jwt.decode(token, SECRET, algorithms=[ALGO])
+    jti = payload["jti"]
+    auth_module._revoked_jtis.add(jti)
+    try:
+        mock_user = MagicMock(spec=schemas.UserRead)
+        with pytest.raises(HTTPException) as exc_info:
+            await _call_get_current_user(token, db_user=mock_user)
+        assert exc_info.value.status_code == 401
+    finally:
+        auth_module._revoked_jtis.discard(jti)
