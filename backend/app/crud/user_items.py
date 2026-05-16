@@ -90,6 +90,20 @@ async def get_user_item_by_item_id(
     return result.scalars().first()
 
 
+async def user_owns_series(db: AsyncSession, user_id: int, series_id: int) -> bool:
+    """Return True if the user has at least one item from this series in their library."""
+    result = await db.execute(
+        select(models.UserItemData.id)
+        .join(models.Item, models.UserItemData.item_id == models.Item.id)
+        .where(
+            models.UserItemData.user_id == user_id,
+            models.Item.series_id == series_id,
+        )
+        .limit(1)
+    )
+    return result.scalars().first() is not None
+
+
 async def get_user_item(
     db: AsyncSession, entry_id: int, user_id: int
 ) -> Optional[models.UserItemData]:

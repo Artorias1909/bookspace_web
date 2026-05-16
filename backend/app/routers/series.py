@@ -69,6 +69,8 @@ async def update_series(
         raise HTTPException(status_code=500, detail="Could not load series. Please try again.")
     if not series:
         raise HTTPException(status_code=404, detail=f"Series {series_id} not found.")
+    if not await crud.user_owns_series(db, current_user.id, series_id):
+        raise HTTPException(status_code=403, detail="You can only edit series in your own library.")
     try:
         series.name = series_in.name
         series.type = series_in.type

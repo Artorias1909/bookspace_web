@@ -14,6 +14,16 @@ async def _create_series(client, headers, payload=None):
     return resp.json()
 
 
+async def _series_with_owned_item(client, headers, series_payload=None):
+    """Create a series, add one item to it, and put that item in the user's library."""
+    s = await _create_series(client, headers, series_payload)
+    item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=headers)
+    item_id = item_resp.json()["id"]
+    await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=headers)
+    await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=headers)
+    return s
+
+
 @pytest.mark.asyncio
 async def test_create_series(client):
     h = await create_user_and_login(client)
@@ -72,7 +82,7 @@ async def test_get_series_db_error(client):
 @pytest.mark.asyncio
 async def test_update_series(client):
     h = await create_user_and_login(client)
-    s = await _create_series(client, h)
+    s = await _series_with_owned_item(client, h)
     resp = await client.put(
         f"/series/{s['id']}",
         json={"name": "Berserk Deluxe", "type": "manga", "total_volumes": 13},
@@ -80,6 +90,16 @@ async def test_update_series(client):
     )
     assert resp.status_code == 200
     assert resp.json()["name"] == "Berserk Deluxe"
+
+
+@pytest.mark.asyncio
+async def test_update_series_forbidden_when_not_in_library(client):
+    """User B cannot edit a series that only User A has in their library."""
+    h_a = await create_user_and_login(client, username="user_a_series", password="pass1234")
+    h_b = await create_user_and_login(client, username="user_b_series", password="pass1234")
+    s = await _series_with_owned_item(client, h_a)
+    resp = await client.put(f"/series/{s['id']}", json=SERIES_PAYLOAD, headers=h_b)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -100,14 +120,7 @@ async def test_update_series_fetch_db_error(client):
 @pytest.mark.asyncio
 async def test_update_series_save_db_error(client):
     h = await create_user_and_login(client)
-    s = await _create_series(client, h)
-    with patch("app.routers.series.crud.get_series", return_value=type("S", (), {
-        "name": "x", "type": "manga", "total_volumes": 1,
-        "__class__": type("S", (), {})()
-    })()) as _:
-        pass
-    # Patch the db.commit inside the router's update handler
-    from unittest.mock import AsyncMock
+    s = await _series_with_owned_item(client, h)
     with patch("sqlalchemy.ext.asyncio.AsyncSession.commit", side_effect=SQLAlchemyError("db")):
         resp = await client.put(f"/series/{s['id']}", json=SERIES_PAYLOAD, headers=h)
     assert resp.status_code == 500
@@ -209,7 +222,7 @@ async def test_create_series_with_cover_url(client):
 @pytest.mark.asyncio
 async def test_update_series_cover_url(client):
     h = await create_user_and_login(client)
-    s = await _create_series(client, h)
+    s = await _series_with_owned_item(client, h)
     resp = await client.put(
         f"/series/{s['id']}",
         json={**SERIES_PAYLOAD, "cover_url": "https://example.com/new.jpg"},

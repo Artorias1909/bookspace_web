@@ -46,13 +46,30 @@ async def test_read_item_db_error(client):
     assert resp.status_code == 500
 
 
+async def _create_and_own_item(client, headers, payload=None):
+    """Create an item and add it to the user's library. Returns the item dict."""
+    item = (await client.post("/items/", json=payload or ITEM_PAYLOAD, headers=headers)).json()
+    await client.post("/user-items/", json={"item_id": item["id"], "status": "unread"}, headers=headers)
+    return item
+
+
 @pytest.mark.asyncio
 async def test_update_item(client):
     h = await create_user_and_login(client)
-    created = (await client.post("/items/", json=ITEM_PAYLOAD, headers=h)).json()
-    resp = await client.put(f"/items/{created['id']}", json={**ITEM_PAYLOAD, "title": "Dune Messiah"}, headers=h)
+    item = await _create_and_own_item(client, h)
+    resp = await client.put(f"/items/{item['id']}", json={**ITEM_PAYLOAD, "title": "Dune Messiah"}, headers=h)
     assert resp.status_code == 200
     assert resp.json()["title"] == "Dune Messiah"
+
+
+@pytest.mark.asyncio
+async def test_update_item_forbidden_when_not_in_library(client):
+    """A user cannot edit an item that belongs to another user's library only."""
+    h_a = await create_user_and_login(client, username="user_a_items", password="pass1234")
+    h_b = await create_user_and_login(client, username="user_b_items", password="pass1234")
+    item = await _create_and_own_item(client, h_a)
+    resp = await client.put(f"/items/{item['id']}", json=ITEM_PAYLOAD, headers=h_b)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -73,9 +90,9 @@ async def test_update_item_fetch_db_error(client):
 @pytest.mark.asyncio
 async def test_update_item_save_db_error(client):
     h = await create_user_and_login(client)
-    created = (await client.post("/items/", json=ITEM_PAYLOAD, headers=h)).json()
+    item = await _create_and_own_item(client, h)
     with patch("app.routers.items.crud.update_item", side_effect=SQLAlchemyError("db")):
-        resp = await client.put(f"/items/{created['id']}", json=ITEM_PAYLOAD, headers=h)
+        resp = await client.put(f"/items/{item['id']}", json=ITEM_PAYLOAD, headers=h)
     assert resp.status_code == 500
 
 
