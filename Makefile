@@ -3,13 +3,10 @@
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 test:
-	cd backend && python -m pytest --tb=short -q
-
-test-verbose:
-	cd backend && python -m pytest --tb=long -v
+	cd backend && python -m pytest --tb=short -v
 
 test-coverage:
-	cd backend && python -m pytest --cov=app --cov-report=term-missing -q
+	cd backend && python -m pytest --cov=app --cov-report=term-missing -v
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 
