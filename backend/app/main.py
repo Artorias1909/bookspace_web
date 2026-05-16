@@ -47,6 +47,17 @@ app.add_middleware(
 )
 
 
+_MAX_BODY_BYTES = 1 * 1024 * 1024  # 1 MB
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": "Request body too large."})
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -54,6 +65,11 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-XSS-Protection", "1; mode=block")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; font-src 'self'; connect-src 'self'",
+    )
     return response
 
 

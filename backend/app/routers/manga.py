@@ -36,6 +36,9 @@ async def upsert_manga_meta(
     item = await crud.get_item(db, item_id)
     if not item:
         raise HTTPException(status_code=404, detail=f"Item {item_id} not found.")
+    owned = await crud.get_user_item_by_item_id(db, current_user.id, item_id)
+    if not owned:
+        raise HTTPException(status_code=403, detail="You can only edit items in your own library.")
     try:
         manga = await crud.upsert_manga_volume(db, item_id, meta_in)
     except SQLAlchemyError:

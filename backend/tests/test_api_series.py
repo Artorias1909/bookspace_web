@@ -15,12 +15,13 @@ async def _create_series(client, headers, payload=None):
 
 
 async def _series_with_owned_item(client, headers, series_payload=None):
-    """Create a series, add one item to it, and put that item in the user's library."""
+    """Create a series, add one item to the user's library, then assign it to the series."""
     s = await _create_series(client, headers, series_payload)
     item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=headers)
     item_id = item_resp.json()["id"]
-    await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=headers)
+    # Own the item first — assign endpoint requires library ownership
     await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=headers)
+    await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=headers)
     return s
 
 
@@ -132,6 +133,8 @@ async def test_assign_item_to_series(client):
     s = await _create_series(client, h)
     item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=h)
     item_id = item_resp.json()["id"]
+    # Own the item first
+    await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
     resp = await client.post(
         f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=h
     )
@@ -147,11 +150,15 @@ async def test_assign_series_not_found(client):
 
 
 @pytest.mark.asyncio
-async def test_assign_item_not_found(client):
+async def test_assign_item_forbidden_when_not_in_library(client):
+    """A user cannot assign an item they do not own to a series."""
     h = await create_user_and_login(client)
     s = await _create_series(client, h)
-    resp = await client.post(f"/series/{s['id']}/assign/9999", headers=h)
-    assert resp.status_code == 404
+    item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=h)
+    item_id = item_resp.json()["id"]
+    # Do NOT add to library → should get 403
+    resp = await client.post(f"/series/{s['id']}/assign/{item_id}", headers=h)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -166,9 +173,25 @@ async def test_assign_series_fetch_db_error(client):
 async def test_assign_item_db_error(client):
     h = await create_user_and_login(client)
     s = await _create_series(client, h)
+    item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=h)
+    item_id = item_resp.json()["id"]
+    await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
     with patch("app.routers.series.crud.assign_item_to_series", side_effect=SQLAlchemyError("db")):
-        resp = await client.post(f"/series/{s['id']}/assign/1", headers=h)
+        resp = await client.post(f"/series/{s['id']}/assign/{item_id}", headers=h)
     assert resp.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_assign_item_returns_none(client):
+    """assign_item_to_series returning None triggers a 404 (race-condition path)."""
+    h = await create_user_and_login(client)
+    s = await _create_series(client, h)
+    item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=h)
+    item_id = item_resp.json()["id"]
+    await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
+    with patch("app.routers.series.crud.assign_item_to_series", return_value=None):
+        resp = await client.post(f"/series/{s['id']}/assign/{item_id}", headers=h)
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -176,7 +199,9 @@ async def test_series_items(client):
     h = await create_user_and_login(client)
     s = await _create_series(client, h)
     item_resp = await client.post("/items/", json=ITEM_PAYLOAD, headers=h)
-    await client.post(f"/series/{s['id']}/assign/{item_resp.json()['id']}", headers=h)
+    item_id = item_resp.json()["id"]
+    await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
+    await client.post(f"/series/{s['id']}/assign/{item_id}", headers=h)
     resp = await client.get(f"/series/{s['id']}/items", headers=h)
     assert resp.status_code == 200
     assert len(resp.json()) == 1
@@ -240,12 +265,12 @@ async def test_update_series_cover_url(client):
 async def test_bulk_series_status_sets_all_entries(client):
     h = await create_user_and_login(client)
     s = await _create_series(client, h)
-    # Create two items in the series
+    # Create two items: own them first, then assign to series
     for vol in ("1", "2"):
         item_resp = await client.post("/items/", json={**ITEM_PAYLOAD, "title": f"Vol {vol}"}, headers=h)
         item_id = item_resp.json()["id"]
-        await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number={vol}", headers=h)
         await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
+        await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number={vol}", headers=h)
 
     resp = await client.patch(
         f"/series/{s['id']}/status",
@@ -262,8 +287,8 @@ async def test_bulk_series_status_completed_sets_progress(client):
     s = await _create_series(client, h)
     item_resp = await client.post("/items/", json={**ITEM_PAYLOAD, "page_count": 240}, headers=h)
     item_id = item_resp.json()["id"]
-    await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=h)
     await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
+    await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number=1", headers=h)
 
     resp = await client.patch(f"/series/{s['id']}/status", json={"status": "completed"}, headers=h)
     assert resp.status_code == 200
@@ -316,12 +341,12 @@ async def test_bulk_series_status_update_db_error(client):
 async def test_delete_series_from_library(client):
     h = await create_user_and_login(client)
     s = await _create_series(client, h)
-    # Add two items to library via the series
+    # Create two items: own them first, then assign to series
     for vol in ("1", "2"):
         item_resp = await client.post("/items/", json={**ITEM_PAYLOAD, "title": f"Vol {vol}"}, headers=h)
         item_id = item_resp.json()["id"]
-        await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number={vol}", headers=h)
         await client.post("/user-items/", json={"item_id": item_id, "status": "unread"}, headers=h)
+        await client.post(f"/series/{s['id']}/assign/{item_id}?volume_number={vol}", headers=h)
 
     resp = await client.delete(f"/series/{s['id']}/library", headers=h)
     assert resp.status_code == 200

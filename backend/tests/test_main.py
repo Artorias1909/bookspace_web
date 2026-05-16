@@ -7,7 +7,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.main import app, log_requests, unhandled_exception_handler, security_headers
+from app.main import app, log_requests, unhandled_exception_handler, security_headers, limit_request_body
 from app.logging_config import configure_logging
 
 
@@ -94,12 +94,13 @@ async def test_middleware_catches_call_next_exception():
 
 @pytest.mark.asyncio
 async def test_security_headers_present(client):
-    """Every response should carry the four security headers."""
+    """Every response should carry the security headers."""
     resp = await client.get("/docs")
     assert resp.headers.get("x-content-type-options") == "nosniff"
     assert resp.headers.get("x-frame-options") == "DENY"
     assert resp.headers.get("x-xss-protection") == "1; mode=block"
     assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+    assert "content-security-policy" in resp.headers
 
 
 @pytest.mark.asyncio
@@ -115,6 +116,43 @@ async def test_security_headers_middleware_directly():
     result = await security_headers(request, fake_next)
     assert result.headers["X-Content-Type-Options"] == "nosniff"
     assert result.headers["X-Frame-Options"] == "DENY"
+    assert "Content-Security-Policy" in result.headers
+
+
+# ---------------------------------------------------------------------------
+# Body size middleware
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_limit_request_body_rejects_large_payload():
+    """Middleware returns 413 when Content-Length exceeds 1 MB."""
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"content-length", b"2097152")],  # 2 MB
+    }
+    request = Request(scope)
+
+    async def fake_next(req):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": True})
+
+    response = await limit_request_body(request, fake_next)
+    assert response.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_limit_request_body_allows_normal_payload():
+    """A request without Content-Length passes through the middleware."""
+    request = _make_request()
+
+    async def fake_next(req):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": True})
+
+    response = await limit_request_body(request, fake_next)
+    assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

@@ -8,8 +8,6 @@ services:
       POSTGRES_PASSWORD: password
     volumes:
       - bookspace_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
 
   backend:
     build:
@@ -18,8 +16,6 @@ services:
       - ./.env
     depends_on:
       - db
-    ports:
-      - "8000:8000"
 
   frontend:
     build:

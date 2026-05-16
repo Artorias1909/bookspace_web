@@ -1,9 +1,11 @@
 import pytest
 from unittest.mock import patch, AsyncMock
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi import Request
 
 from tests.conftest import create_user_and_login
 import app.rate_limit as _rl
+from app.rate_limit import _get_client_ip
 
 
 @pytest.mark.asyncio
@@ -88,3 +90,46 @@ async def test_login_rate_limit(client):
     assert resp.status_code == 429
     assert "Retry-After" in resp.headers
     _rl._buckets.clear()  # cleanup so other tests are unaffected
+
+
+@pytest.mark.asyncio
+async def test_register_rate_limit(client):
+    """Exceeding REGISTER_MAX_HITS attempts in the window returns 429."""
+    _rl._buckets.clear()
+    for i in range(_rl.REGISTER_MAX_HITS):
+        await client.post("/auth/register", json={"username": f"rl_user_{i}", "password": "pass1234"})
+    resp = await client.post("/auth/register", json={"username": "rl_overflow", "password": "pass1234"})
+    assert resp.status_code == 429
+    assert "Retry-After" in resp.headers
+    _rl._buckets.clear()
+
+
+# ---------------------------------------------------------------------------
+# _get_client_ip unit tests
+# ---------------------------------------------------------------------------
+
+def _make_request(headers=(), client=None):
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers],
+    }
+    if client is not None:
+        scope["client"] = client
+    return Request(scope)
+
+
+def test_get_client_ip_uses_forwarded_for():
+    req = _make_request(headers=[("X-Forwarded-For", "1.2.3.4, 5.6.7.8")])
+    assert _get_client_ip(req) == "1.2.3.4"
+
+
+def test_get_client_ip_falls_back_to_remote_addr():
+    req = _make_request(client=("192.168.1.1", 12345))
+    assert _get_client_ip(req) == "192.168.1.1"
+
+
+def test_get_client_ip_no_client_returns_unknown():
+    req = _make_request()
+    assert _get_client_ip(req) == "unknown"

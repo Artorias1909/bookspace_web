@@ -124,6 +124,9 @@ async def assign_item(
         raise HTTPException(status_code=500, detail="Could not load series. Please try again.")
     if not series:
         raise HTTPException(status_code=404, detail=f"Series {series_id} not found.")
+    owned = await crud.get_user_item_by_item_id(db, current_user.id, item_id)
+    if not owned:
+        raise HTTPException(status_code=403, detail="You can only assign items in your own library.")
     try:
         item = await crud.assign_item_to_series(db, item_id, series_id, volume_number)
     except SQLAlchemyError:

@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas, auth
 from ..deps import get_db_session
-from ..rate_limit import login_rate_limit
+from ..rate_limit import login_rate_limit, register_rate_limit
 
 log = logging.getLogger("bookspace.auth")
 router = APIRouter()
 
 
-@router.post("/register", response_model=schemas.UserRead, status_code=201)
+@router.post("/register", response_model=schemas.UserRead, status_code=201, dependencies=[Depends(register_rate_limit)])
 async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_db_session)):
     log.info("Registration attempt for username '%s'", user_in.username)
     existing = await crud.get_user_by_username(db, user_in.username)
