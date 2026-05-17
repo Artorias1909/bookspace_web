@@ -1,13 +1,11 @@
-"""Manga metadata router: read and upsert MangaVolume records for catalog items."""
+"""Manga metadata router: read, upsert, and chapter-refresh endpoints."""
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, dnb, schemas
-from ..deps import get_db_session
-from ..auth import get_current_user
+from ..deps import DbSession, CurrentUser
 
 log = logging.getLogger("bookspace.api")
 router = APIRouter()
@@ -16,8 +14,8 @@ router = APIRouter()
 @router.get("/{item_id}/meta", response_model=schemas.MangaVolumeRead)
 async def get_manga_meta(
     item_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Return manga-specific metadata (demographic, original title, chapters) for an item."""
     manga = await crud.get_manga_volume(db, item_id)
@@ -30,8 +28,8 @@ async def get_manga_meta(
 async def upsert_manga_meta(
     item_id: int,
     meta_in: schemas.MangaVolumeUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Create or fully replace manga metadata (including chapters) for an item."""
     item = await crud.get_item(db, item_id)
@@ -51,8 +49,8 @@ async def upsert_manga_meta(
 @router.post("/{item_id}/chapters/refresh", response_model=schemas.MangaVolumeRead)
 async def refresh_chapters(
     item_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Re-fetch chapter data from DNB for an existing item and update its MangaVolume."""
     item = await crud.get_item(db, item_id)

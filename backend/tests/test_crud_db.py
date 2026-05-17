@@ -604,4 +604,3 @@ async def test_bulk_update_series_status_completed(db_session):
     assert count == 1
     rows = await crud.list_user_items(db_session, user.id)
     assert rows[0].status == "completed"
-    assert rows[0].progress_percent == 100.0

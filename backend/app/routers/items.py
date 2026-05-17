@@ -2,13 +2,11 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas
-from ..deps import get_db_session
-from ..auth import get_current_user
+from ..deps import DbSession, CurrentUser
 
 log = logging.getLogger("bookspace.api")
 router = APIRouter()
@@ -16,11 +14,11 @@ router = APIRouter()
 
 @router.get("/search", response_model=List[schemas.ItemRead])
 async def search_items(
+    db: DbSession,
+    current_user: CurrentUser,
     q: Optional[str] = Query(None, min_length=1),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
 ):
     """Search the catalog by title, author, genre, or volume title; requires authentication."""
     if not q:
@@ -38,8 +36,8 @@ async def search_items(
 @router.post("/", response_model=schemas.ItemRead, status_code=201)
 async def create_item(
     item_in: schemas.ItemCreate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Create a standalone catalog item; does not automatically add it to the user's library."""
     log.info("Creating item '%s' (user=%s)", item_in.title, current_user.id)
@@ -53,8 +51,8 @@ async def create_item(
 @router.get("/{item_id}", response_model=schemas.ItemRead)
 async def read_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Fetch a single catalog item by ID with all nested relations; 404 if not found."""
     try:
@@ -71,8 +69,8 @@ async def read_item(
 async def update_item(
     item_id: int,
     item_update: schemas.ItemUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Replace item metadata; only the user who owns the item in their library may edit it."""
     try:
@@ -82,7 +80,6 @@ async def update_item(
         raise HTTPException(status_code=500, detail="Could not load item. Please try again.")
     if not item:
         raise HTTPException(status_code=404, detail=f"Item {item_id} not found.")
-    # Only the user who has this item in their library may edit its metadata.
     owned = await crud.get_user_item_by_item_id(db, current_user.id, item_id)
     if not owned:
         raise HTTPException(status_code=403, detail="You can only edit items in your own library.")

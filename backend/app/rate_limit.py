@@ -2,14 +2,18 @@
 
 Designed as a FastAPI dependency — raises HTTP 429 when the caller exceeds
 the configured limit within the rolling time window.
+
+Memory note: buckets are stored in a plain dict keyed by IP. Keys are evicted
+lazily when an IP's timestamps fall outside the window on the next request,
+so the dict stays bounded to IPs active within the last window period.
 """
 import time
 from asyncio import Lock
-from collections import defaultdict
 
 from fastapi import HTTPException, Request
 
-_buckets: dict[str, list[float]] = defaultdict(list)
+# Plain dict (not defaultdict) so empty entries are deleted rather than kept forever.
+_buckets: dict[str, list[float]] = {}
 _lock = Lock()
 
 # Login endpoint: 10 attempts per IP per 60 seconds
@@ -29,17 +33,24 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _prune(key: str, cutoff: float) -> list[float]:
+    """Return active timestamps for key and evict the entry if it becomes empty."""
+    active = [t for t in _buckets.get(key, []) if t > cutoff]
+    if not active:
+        _buckets.pop(key, None)
+    return active
+
+
 async def login_rate_limit(request: Request) -> None:
     """FastAPI dependency: allow at most LOGIN_MAX_HITS per IP per LOGIN_WINDOW seconds."""
     ip = _get_client_ip(request)
     now = time.monotonic()
 
     async with _lock:
-        bucket = _buckets[ip]
-        cutoff = now - LOGIN_WINDOW
-        _buckets[ip] = bucket = [t for t in bucket if t > cutoff]
+        bucket = _prune(ip, now - LOGIN_WINDOW)
 
         if len(bucket) >= LOGIN_MAX_HITS:
+            _buckets[ip] = bucket
             raise HTTPException(
                 status_code=429,
                 detail=(
@@ -49,6 +60,7 @@ async def login_rate_limit(request: Request) -> None:
                 headers={"Retry-After": str(LOGIN_WINDOW)},
             )
         bucket.append(now)
+        _buckets[ip] = bucket
 
 
 async def register_rate_limit(request: Request) -> None:
@@ -58,11 +70,10 @@ async def register_rate_limit(request: Request) -> None:
     key = f"register:{ip}"
 
     async with _lock:
-        bucket = _buckets[key]
-        cutoff = now - REGISTER_WINDOW
-        _buckets[key] = bucket = [t for t in bucket if t > cutoff]
+        bucket = _prune(key, now - REGISTER_WINDOW)
 
         if len(bucket) >= REGISTER_MAX_HITS:
+            _buckets[key] = bucket
             raise HTTPException(
                 status_code=429,
                 detail=(
@@ -72,3 +83,4 @@ async def register_rate_limit(request: Request) -> None:
                 headers={"Retry-After": str(REGISTER_WINDOW)},
             )
         bucket.append(now)
+        _buckets[key] = bucket

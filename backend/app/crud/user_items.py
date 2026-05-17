@@ -61,13 +61,11 @@ async def create_user_item_data(
         raise ValueError("already_in_library")
 
     current_page = user_item_data_in.current_page or 0
-    progress_percent = calculate_progress(current_page, item.page_count)
     entry = models.UserItemData(
         user_id=user_id,
         item_id=item.id,
         status=user_item_data_in.status or "unread",
         current_page=current_page,
-        progress_percent=progress_percent,
     )
     db.add(entry)
     await db.commit()
@@ -77,8 +75,8 @@ async def create_user_item_data(
     )
     entry = result.scalars().first()
     log.info(
-        "UserItemData created: user_id=%s item_id=%s status=%s progress=%.1f%%",
-        user_id, item.id, entry.status, progress_percent,
+        "UserItemData created: user_id=%s item_id=%s status=%s",
+        user_id, item.id, entry.status,
     )
     return entry
 
@@ -223,7 +221,6 @@ async def update_user_item_data(
         entry.status = update_in.status
     if update_in.current_page is not None:
         entry.current_page = max(0, update_in.current_page)
-    entry.progress_percent = calculate_progress(entry.current_page, entry.item.page_count)
     db.add(entry)
     await db.commit()
     log.info(

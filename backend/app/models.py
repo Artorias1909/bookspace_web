@@ -6,7 +6,7 @@ Relationship graph:
     BoxSet ──< Item
     Series ──< BoxSet
 """
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Float, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -169,7 +169,7 @@ class UserItemData(Base):
     item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True)
     status = Column(String(32), nullable=False, default="unread", index=True)
     current_page = Column(Integer, nullable=False, default=0)
-    progress_percent = Column(Float, nullable=False, default=0.0)
+    # progress_percent is derived from current_page / item.page_count — not stored
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

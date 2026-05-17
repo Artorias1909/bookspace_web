@@ -6,4 +6,5 @@ PyJWT==2.12.1
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
 httpx==0.24.1
-python-dotenv==1.0.0
+alembic>=1.15
+pydantic-settings>=2.0

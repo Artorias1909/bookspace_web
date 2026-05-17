@@ -5,10 +5,9 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas, auth
-from ..deps import get_db_session
+from ..deps import DbSession, CurrentUser
 from ..rate_limit import login_rate_limit, register_rate_limit
 
 log = logging.getLogger("bookspace.auth")
@@ -16,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=schemas.UserRead, status_code=201, dependencies=[Depends(register_rate_limit)])
-async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_db_session)):
+async def register(user_in: schemas.UserCreate, db: DbSession):
     """Create a new user account; 400 if the username is taken, rate-limited to 5 attempts/min/IP."""
     log.info("Registration attempt for username '%s'", user_in.username)
     existing = await crud.get_user_by_username(db, user_in.username)
@@ -26,7 +25,6 @@ async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_d
     try:
         user = await crud.create_user(db, user_in)
     except IntegrityError:
-        # Concurrent registration of the same username — DB constraint fired
         log.warning("Concurrent registration conflict for username '%s'", user_in.username)
         raise HTTPException(status_code=400, detail="Username already registered.")
     except SQLAlchemyError:
@@ -38,7 +36,7 @@ async def register(user_in: schemas.UserCreate, db: AsyncSession = Depends(get_d
 @router.post("/token", response_model=schemas.Token, dependencies=[Depends(login_rate_limit)])
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db_session),
+    db: DbSession = None,
 ):
     """Exchange credentials for a JWT bearer token; 401 on bad credentials, rate-limited to 10/min/IP."""
     log.info("Login attempt for username '%s'", form_data.username)
@@ -64,13 +62,13 @@ async def login_for_access_token(
 @router.post("/logout", status_code=204)
 async def logout(
     token: str = Depends(auth.oauth2_scheme),
-    _: schemas.UserRead = Depends(auth.get_current_user),
+    _: CurrentUser = None,
 ):
     """Invalidate the current access token via server-side JTI revocation."""
     auth.revoke_token(token)
 
 
 @router.get("/me", response_model=schemas.UserRead)
-async def read_users_me(current_user: schemas.UserRead = Depends(auth.get_current_user)):
+async def read_users_me(current_user: CurrentUser):
     """Return the profile of the currently authenticated user."""
     return current_user
