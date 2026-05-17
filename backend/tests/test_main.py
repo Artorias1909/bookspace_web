@@ -4,11 +4,13 @@ lifespan startup, and logging_config.
 """
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
+import logging
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.main import app, log_requests, unhandled_exception_handler, security_headers, limit_request_body
-from app.logging_config import configure_logging
+from app.logging_config import configure_logging, JsonFormatter, TextFormatter
 
 
 # ---------------------------------------------------------------------------
@@ -17,6 +19,63 @@ from app.logging_config import configure_logging
 
 def test_configure_logging_runs_without_error():
     configure_logging()  # must not raise
+
+
+def test_configure_logging_json_format(monkeypatch):
+    """LOG_FORMAT=json switches to JsonFormatter without raising."""
+    monkeypatch.setenv("LOG_FORMAT", "json")
+    configure_logging()
+
+
+def test_json_formatter_basic():
+    record = logging.LogRecord(
+        name="test", level=logging.INFO, pathname="", lineno=0,
+        msg="hello %s", args=("world",), exc_info=None,
+    )
+    import json
+    output = JsonFormatter().format(record)
+    data = json.loads(output)
+    assert data["msg"] == "hello world"
+    assert data["level"] == "INFO"
+
+
+def test_json_formatter_with_exception():
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        import sys
+        exc_info = sys.exc_info()
+    record = logging.LogRecord(
+        name="test", level=logging.ERROR, pathname="", lineno=0,
+        msg="oops", args=(), exc_info=exc_info,
+    )
+    import json
+    output = JsonFormatter().format(record)
+    data = json.loads(output)
+    assert "exc" in data
+    assert "ValueError" in data["exc"]
+
+
+def test_json_formatter_exc_text():
+    record = logging.LogRecord(
+        name="test", level=logging.ERROR, pathname="", lineno=0,
+        msg="oops", args=(), exc_info=None,
+    )
+    record.exc_text = "pre-formatted traceback"
+    import json
+    output = JsonFormatter().format(record)
+    data = json.loads(output)
+    assert data["exc"] == "pre-formatted traceback"
+
+
+def test_text_formatter_basic():
+    record = logging.LogRecord(
+        name="test", level=logging.WARNING, pathname="", lineno=0,
+        msg="watch out", args=(), exc_info=None,
+    )
+    output = TextFormatter().format(record)
+    assert "watch out" in output
+    assert "WARNING" in output
 
 
 @pytest.mark.asyncio
