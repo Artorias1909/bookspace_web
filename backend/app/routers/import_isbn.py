@@ -92,8 +92,15 @@ async def import_by_isbn(
 # ---------------------------------------------------------------------------
 
 def _sanitize_isbn(raw: str) -> str:
-    """Strip invisible Unicode characters and whitespace from a raw ISBN string."""
-    return "".join(c for c in raw if unicodedata.category(c) not in ("Cf", "Zs")).strip()
+    """Normalize an ISBN to digits-only by removing hyphens, spaces, and invisible chars.
+
+    Ensures that '978-3-551-02437-4', '978 3551024374', and '9783551024374' all
+    resolve to the same key so cache lookups and unique-constraint checks are consistent.
+    """
+    return "".join(
+        c for c in raw
+        if c.isdigit() or c == "X"  # keep digits and trailing X (ISBN-10)
+    )
 
 
 async def _check_existing_item(

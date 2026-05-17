@@ -63,6 +63,16 @@ async def test_isbn_empty(client):
     assert "empty" in resp.json()["detail"]
 
 
+def test_sanitize_isbn_strips_hyphens_and_spaces():
+    """Regression: hyphens/spaces must be removed so '978-3551024374' == '9783551024374'."""
+    from app.routers.import_isbn import _sanitize_isbn
+    assert _sanitize_isbn("978-3-551-02437-4") == "9783551024374"
+    assert _sanitize_isbn("978 3551024374") == "9783551024374"
+    assert _sanitize_isbn("9783551024374") == "9783551024374"
+    assert _sanitize_isbn("‏ 978-3551024374") == "9783551024374"  # invisible char + hyphen
+    assert _sanitize_isbn("   ") == ""
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_isbn_lookup_not_found(client):
