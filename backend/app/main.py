@@ -1,7 +1,9 @@
 """FastAPI application factory: CORS middleware, security headers, request logging, and router mounting."""
 import asyncio
 import logging
+import time
 import traceback
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,13 +38,16 @@ async def lifespan(app: FastAPI):
     Raises:
         Exception: Re-raises any migration failure so the server refuses to start.
     """
-    log.info("Starting Bookspace API — running database migrations")
+    log.info(
+        "Starting Bookspace API — env=production frontend_url=%s",
+        settings.frontend_url,
+    )
     try:
         alembic_cfg = AlembicConfig(str(_ALEMBIC_CFG_PATH))
         await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
-        log.info("Database migrations applied")
+        log.info("Database migrations applied successfully")
     except Exception:
-        log.critical("Failed to run database migrations", exc_info=True)
+        log.critical("Failed to run database migrations — refusing to start", exc_info=True)
         raise
     yield
     log.info("Bookspace API shutting down")
@@ -92,31 +97,45 @@ async def security_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Structured access-log middleware with status-level-based severity.
+    """Access-log middleware: assigns a request ID, measures duration, logs at appropriate level.
 
-    Catches exceptions that bubble out of handlers and returns a generic 500 response,
-    preventing raw tracebacks from leaking to clients.
+    Every request gets an X-Request-ID response header so individual requests can be
+    traced through the logs. Catches exceptions that bubble out of handlers and returns
+    a generic 500 to prevent raw tracebacks leaking to clients.
     """
-    log.info("%s %s", request.method, request.url.path)
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
+    t0 = time.perf_counter()
+
+    log.info("→ %s %s [%s]", request.method, request.url.path, request_id)
     try:
         response = await call_next(request)
     except Exception:
+        duration_ms = (time.perf_counter() - t0) * 1000
         log.error(
-            "Unhandled exception during %s %s",
+            "✗ %s %s [%s] %.1fms — unhandled exception",
             request.method,
             request.url.path,
+            request_id,
+            duration_ms,
             exc_info=True,
         )
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected server error occurred. Please try again."},
         )
+
+    duration_ms = (time.perf_counter() - t0) * 1000
+    response.headers["X-Request-ID"] = request_id
+    msg = "← %s %s %s [%s] %.1fms"
+    args = (request.method, request.url.path, response.status_code, request_id, duration_ms)
+
     if response.status_code >= 500:
-        log.error("%s %s → %s", request.method, request.url.path, response.status_code)
+        log.error(msg, *args)
     elif response.status_code >= 400:
-        log.warning("%s %s → %s", request.method, request.url.path, response.status_code)
+        log.warning(msg, *args)
     else:
-        log.debug("%s %s → %s", request.method, request.url.path, response.status_code)
+        log.debug(msg, *args)
     return response
 
 
