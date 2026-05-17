@@ -2,7 +2,7 @@
 import logging
 from typing import List, Optional
 
-from sqlalchemy import select, or_, func, String
+from sqlalchemy import select, or_, func, String, case, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -107,12 +107,20 @@ async def assign_item_to_series(
 
 
 async def list_series_items(db: AsyncSession, series_id: int) -> List[models.Item]:
-    """Return all Items in a series ordered by volume_number ascending (NULLs first), then title."""
+    """Return all Items in a series ordered by volume_number ascending (NULLs first), then title.
+
+    volume_number is stored as VARCHAR; cast to FLOAT for correct numeric ordering
+    so that "10" sorts after "9" instead of before "2".
+    """
+    numeric_vol = case(
+        (models.Item.volume_number.is_(None), None),
+        else_=cast(models.Item.volume_number, Float),
+    )
     result = await db.execute(
         select(models.Item)
         .options(*_ITEM_LOAD)
         .where(models.Item.series_id == series_id)
-        .order_by(models.Item.volume_number.asc().nullsfirst(), models.Item.title.asc())
+        .order_by(numeric_vol.asc().nullsfirst(), models.Item.title.asc())
     )
     rows = result.scalars().all()
     log.debug("list_series_items series_id=%s → %s items", series_id, len(rows))

@@ -108,14 +108,14 @@ const AddBookPanel = ({ onClose, onSaved }) => {
   const [preview,     setPreview]     = useState(null);
   const [isbnLoading, setIsbnLoading] = useState(false);
   const [isbnError,   setIsbnError]   = useState(null);
-  const [isbnStatus,  setIsbnStatus]  = useState("unread");
+  const [isbnStatus,  setIsbnStatus]  = useState<import("../types").ReadingStatus>("unread");
   const [scanStep,    setScanStep]    = useState(-1);   // -1 = idle
   const [scanDone,    setScanDone]    = useState(false);
   const stepTimers = useRef([]);
 
   // Manual tab state
   const [manual,        setManual]        = useState(EMPTY_MANUAL);
-  const [manualStatus,  setManualStatus]  = useState("unread");
+  const [manualStatus,  setManualStatus]  = useState<import("../types").ReadingStatus>("unread");
   const [manualLoading, setManualLoading] = useState(false);
   const [manualError,   setManualError]   = useState(null);
 
@@ -297,7 +297,7 @@ const AddBookPanel = ({ onClose, onSaved }) => {
                   {!preview.already_in_library && !(preview.type === "boxset" && preview.volume_count > 0 && (preview.already_in_library_ids?.length ?? 0) >= preview.volume_count) && (
                     <div className="field" style={{ marginTop: 16 }}>
                       <label>Hinzufügen als</label>
-                      <select value={isbnStatus} onChange={(e) => setIsbnStatus(e.target.value)}>
+                      <select value={isbnStatus} onChange={(e) => setIsbnStatus(e.target.value as import("../types").ReadingStatus)}>
                         {STATUS_OPTIONS.map((s) => (
                           <option key={s} value={s}>{capitalize(s)}</option>
                         ))}
@@ -373,7 +373,7 @@ const AddBookPanel = ({ onClose, onSaved }) => {
               </div>
               <div className="field">
                 <label>Add to library as</label>
-                <select value={manualStatus} onChange={(e) => setManualStatus(e.target.value)}>
+                <select value={manualStatus} onChange={(e) => setManualStatus(e.target.value as import("../types").ReadingStatus)}>
                   {STATUS_OPTIONS.map((s) => (
                     <option key={s} value={s}>{capitalize(s)}</option>
                   ))}

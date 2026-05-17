@@ -127,7 +127,7 @@ function ensureStyles() {
 // ─── Sparkle particle ────────────────────────────────────────────────────────
 function Spark({ angle, dist, size, color, delay, shape = "circle" }) {
   const rad = (angle * Math.PI) / 180;
-  const base = {
+  const base: React.CSSProperties & Record<string, unknown> = {
     position: "absolute", left: "50%", top: "50%",
     width: size, height: size,
     marginLeft: -size / 2, marginTop: -size / 2,

@@ -29,9 +29,9 @@ const ListIcon = () => (
   </svg>
 );
 
-function groupEntries(entries) {
-  const seriesMap = {};
-  const result = [];
+function groupEntries(entries: import("../types").UserItemData[]): import("../types").DisplayItem[] {
+  const seriesMap: Record<number, import("../types").SeriesDisplayGroup> = {};
+  const result: import("../types").DisplayItem[] = [];
 
   for (const entry of entries) {
     const sid = entry.item.series_id;
@@ -80,7 +80,7 @@ const LibraryDashboard = () => {
   const displayItems = useMemo(() => groupEntries(entries), [entries]);
 
   const selectedSeriesGroup = useMemo(
-    () => displayItems.find((d) => d.type === "series" && d.seriesId === selectedSeriesId) || null,
+    () => (displayItems.find((d) => d.type === "series" && (d as import("../types").SeriesDisplayGroup).seriesId === selectedSeriesId) as import("../types").SeriesDisplayGroup | undefined) || null,
     [displayItems, selectedSeriesId],
   );
 

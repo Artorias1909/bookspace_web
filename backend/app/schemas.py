@@ -3,7 +3,7 @@ from datetime import datetime
 from math import ceil
 from typing import Generic, List, Literal, Optional, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 T = TypeVar("T")
 
@@ -242,9 +242,18 @@ class UserItemDataRead(UserItemDataBase):
 
     id: int
     item: ItemRead
-    progress_percent: float
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def progress_percent(self) -> float:
+        """Reading progress [0–100] derived from current_page and item.page_count."""
+        page_count = self.item.page_count if self.item else None
+        current = self.current_page or 0
+        if not page_count or page_count <= 0:
+            return 0.0
+        return round(min(current / page_count * 100.0, 100.0), 2)
 
 
 # ---------------------------------------------------------------------------

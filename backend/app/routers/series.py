@@ -2,13 +2,11 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas
-from ..deps import get_db_session
-from ..auth import get_current_user
+from ..deps import DbSession, CurrentUser
 
 log = logging.getLogger("bookspace.api")
 router = APIRouter()
@@ -17,8 +15,8 @@ router = APIRouter()
 @router.post("/", response_model=schemas.SeriesRead, status_code=201)
 async def create_series(
     series_in: schemas.SeriesCreate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Create a new series record; requires authentication."""
     log.info("Creating series '%s' (user=%s)", series_in.name, current_user.id)
@@ -31,8 +29,8 @@ async def create_series(
 
 @router.get("/", response_model=List[schemas.SeriesRead])
 async def read_series(
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """List all series records (up to the default limit); requires authentication."""
     try:
@@ -45,8 +43,8 @@ async def read_series(
 @router.get("/{series_id}", response_model=schemas.SeriesRead)
 async def get_series(
     series_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Fetch a single series by ID; 404 if not found."""
     try:
@@ -63,8 +61,8 @@ async def get_series(
 async def update_series(
     series_id: int,
     series_in: schemas.SeriesCreate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Replace series metadata; only users who own at least one volume in it may edit; 403 otherwise."""
     try:
@@ -95,8 +93,8 @@ async def update_series(
 async def bulk_set_series_status(
     series_id: int,
     update_in: schemas.SeriesStatusUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Set all of the current user's library entries for a series to the given status."""
     try:
@@ -118,9 +116,9 @@ async def bulk_set_series_status(
 async def assign_item(
     series_id: int,
     item_id: int,
+    db: DbSession,
+    current_user: CurrentUser,
     volume_number: Optional[str] = None,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
 ):
     """Assign a catalog item to a series with an optional volume number; item must be in caller's library."""
     try:
@@ -146,8 +144,8 @@ async def assign_item(
 @router.get("/{series_id}/items", response_model=List[schemas.ItemRead])
 async def series_items(
     series_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Return all catalog items belonging to a series, ordered by volume number."""
     try:
@@ -167,8 +165,8 @@ async def series_items(
 @router.delete("/{series_id}/library", response_model=schemas.BulkUpdateResult)
 async def delete_series_from_library(
     series_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Remove all of the current user's library entries for a series."""
     try:
@@ -185,4 +183,3 @@ async def delete_series_from_library(
         raise HTTPException(status_code=500, detail="Could not delete series entries. Please try again.")
     log.info("Series id=%s removed from library of user_id=%s (%s entries)", series_id, current_user.id, count)
     return schemas.BulkUpdateResult(updated=count)
-

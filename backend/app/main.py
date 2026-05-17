@@ -1,15 +1,19 @@
 """FastAPI application factory: CORS middleware, security headers, request logging, and router mounting."""
+import asyncio
 import logging
 import traceback
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
 from .logging_config import configure_logging
-from .database import engine, Base
+from .database import engine
 from .routers import (
     auth as auth_router,
     items as items_router,
@@ -22,21 +26,23 @@ from .routers import (
 configure_logging()
 log = logging.getLogger("bookspace.api")
 
+_ALEMBIC_CFG_PATH = Path(__file__).parent.parent / "alembic.ini"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """ASGI lifespan handler — run CREATE TABLE on startup, log on shutdown.
+    """ASGI lifespan handler — run Alembic migrations on startup, log on shutdown.
 
     Raises:
-        Exception: Re-raises any database initialisation failure so the server refuses to start.
+        Exception: Re-raises any migration failure so the server refuses to start.
     """
-    log.info("Starting Bookspace API — initialising database schema")
+    log.info("Starting Bookspace API — running database migrations")
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        log.info("Database schema ready")
+        alembic_cfg = AlembicConfig(str(_ALEMBIC_CFG_PATH))
+        await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
+        log.info("Database migrations applied")
     except Exception:
-        log.critical("Failed to initialise database schema", exc_info=True)
+        log.critical("Failed to run database migrations", exc_info=True)
         raise
     yield
     log.info("Bookspace API shutting down")
@@ -129,6 +135,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "An unexpected server error occurred. Please try again."},
     )
+
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    """Liveness probe — returns 200 OK when the server is running."""
+    return {"status": "ok"}
 
 
 app.include_router(auth_router.router,       prefix="/auth",       tags=["auth"])

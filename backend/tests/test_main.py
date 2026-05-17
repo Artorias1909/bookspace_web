@@ -169,37 +169,39 @@ async def test_global_exception_handler():
 
 
 # ---------------------------------------------------------------------------
+# Health endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_health_endpoint(client):
+    """GET /health returns 200 with status ok."""
+    resp = await client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # Lifespan: DB failure
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_lifespan_success():
-    """Covers the happy-path lifespan: create_all succeeds, yield, shutdown."""
+    """Covers the happy-path lifespan: Alembic upgrade succeeds, yield, shutdown."""
     from app.main import lifespan
 
-    mock_conn = AsyncMock()
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-    mock_ctx.__aexit__ = AsyncMock(return_value=False)
-    mock_engine = MagicMock()
-    mock_engine.begin.return_value = mock_ctx
-
-    with patch("app.main.engine", mock_engine):
+    with patch("app.main.alembic_command.upgrade") as mock_upgrade:
         async with lifespan(app):
             pass  # yield point; after this block the shutdown log runs
 
-    mock_conn.run_sync.assert_called_once()
+    mock_upgrade.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_lifespan_db_failure():
+    """Covers the failure path: Alembic upgrade raises, lifespan re-raises."""
     from app.main import lifespan
-    from unittest.mock import MagicMock
 
-    mock_engine = MagicMock()
-    mock_engine.begin.side_effect = RuntimeError("DB unreachable")
-
-    with patch("app.main.engine", mock_engine):
+    with patch("app.main.alembic_command.upgrade", side_effect=RuntimeError("DB unreachable")):
         with pytest.raises(RuntimeError, match="DB unreachable"):
             async with lifespan(app):
                 pass  # pragma: no cover

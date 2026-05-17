@@ -72,7 +72,7 @@ const App = () => {
           />
         </div>
       ) : (
-        <LibraryDashboard user={user} />
+        <LibraryDashboard />
       )}
     </div>
   );

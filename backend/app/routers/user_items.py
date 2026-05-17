@@ -2,13 +2,11 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas
-from ..deps import get_db_session
-from ..auth import get_current_user
+from ..deps import DbSession, CurrentUser
 
 log = logging.getLogger("bookspace.api")
 router = APIRouter()
@@ -17,8 +15,8 @@ router = APIRouter()
 @router.post("/", response_model=schemas.UserItemDataRead, status_code=201)
 async def create_user_item(
     entry_in: schemas.UserItemDataCreate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Add an item to the authenticated user's library; 409 if the item is already present."""
     log.info("Adding library entry for user=%s", current_user.id)
@@ -38,14 +36,14 @@ async def create_user_item(
 
 @router.get("/", response_model=schemas.PagedResponse[schemas.UserItemDataRead])
 async def list_user_items(
+    db: DbSession,
+    current_user: CurrentUser,
     q: Optional[str] = Query(None, min_length=1),
     status: Optional[str] = Query(None, pattern="^(unread|reading|completed|owned|wishlist)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     sort_by: str = Query("title", pattern="^(title|author|publication_year|status)$"),
     sort_dir: str = Query("asc", pattern="^(asc|desc)$"),
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
 ):
     """Return a paginated, filtered, and sorted view of the authenticated user's library."""
     log.debug(
@@ -64,8 +62,8 @@ async def list_user_items(
 @router.get("/{entry_id}", response_model=schemas.UserItemDataRead)
 async def get_user_item(
     entry_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Fetch a single library entry by ID; 404 if not found or not owned by the caller."""
     try:
@@ -82,8 +80,8 @@ async def get_user_item(
 async def update_user_item(
     entry_id: int,
     entry_update: schemas.UserItemDataUpdate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Update reading status and/or current page for a library entry; recalculates progress_percent."""
     try:
@@ -103,8 +101,8 @@ async def update_user_item(
 @router.delete("/{entry_id}", status_code=204)
 async def delete_user_item(
     entry_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: schemas.UserRead = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ):
     """Remove a library entry from the user's library; 204 on success, 404 if not found."""
     try:

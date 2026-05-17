@@ -146,7 +146,6 @@ async def bulk_update_series_status(
             entry.status = "completed"
             if entry.item.page_count:
                 entry.current_page = entry.item.page_count
-            entry.progress_percent = 100.0
         await db.commit()
         count = len(entries)
 
